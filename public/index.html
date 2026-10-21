@@ -12,19 +12,47 @@
 </head>
 <body class="font-normal font-sans">
 
-    <!-- Tela de Bloqueio por PIN -->
-    <div id="pin-screen" class="pin-screen">
-        <div class="pin-card">
-            <div class="pin-icon">🔒</div>
-            <h2>StreamChat Privado</h2>
-            <p>Digite o seu PIN de acesso para liberar a transmissão:</p>
+    <!-- Tela Inicial: Seleção Direta de Canal e Acesso -->
+    <div id="welcome-screen" class="welcome-screen">
+        <div class="welcome-card">
+            <div class="welcome-icon">📺</div>
+            <h2>StreamChat Mobile</h2>
+            <p class="welcome-subtitle">Qual canal você deseja monitorar agora?</p>
 
-            <form id="form-pin" onsubmit="event.preventDefault(); submitPin();">
-                <input type="password" id="input-pin" class="pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="••••" autocomplete="current-password" autofocus>
-                <span id="pin-error-msg" class="pin-error hidden">PIN incorreto. Tente novamente.</span>
-                <button type="submit" id="btn-submit-pin" class="btn-primary btn-full">Entrar</button>
-            </form>
-            <small class="pin-hint">PIN padrão de acesso: <code>3006</code> (alterável nas configurações)</small>
+            <div class="channel-choice-group">
+                <button type="button" class="btn-channel-choice choice-ch1" data-channel="@MundoNoCode">
+                    <span class="choice-icon">🔴</span>
+                    <div class="choice-info">
+                        <strong>@MundoNoCode</strong>
+                        <span>Tecnologia & No-Code</span>
+                    </div>
+                    <span class="choice-arrow">➔</span>
+                </button>
+
+                <button type="button" class="btn-channel-choice choice-ch2" data-channel="@gutaogamer3570">
+                    <span class="choice-icon">🎮</span>
+                    <div class="choice-info">
+                        <strong>@gutaogamer3570</strong>
+                        <span>Games & Lives</span>
+                    </div>
+                    <span class="choice-arrow">➔</span>
+                </button>
+            </div>
+
+            <!-- Opção de Link Direto / Live Não-Listada -->
+            <div class="direct-link-box">
+                <span class="direct-link-title">🔗 Ou cole o link de uma live não-listada:</span>
+                <div class="direct-link-input-row">
+                    <input type="text" id="input-direct-welcome" placeholder="https://youtube.com/watch?v=... ou ID" autocomplete="off">
+                    <button type="button" id="btn-connect-direct" class="btn-primary">Conectar</button>
+                </div>
+            </div>
+
+            <div class="pin-mini-box">
+                <span>🔒 PIN:</span>
+                <input type="password" id="input-welcome-pin" value="3006" inputmode="numeric" maxlength="8">
+                <span id="welcome-pin-error" class="pin-error hidden">PIN incorreto!</span>
+            </div>
         </div>
     </div>
 
@@ -80,7 +108,11 @@
                         <span id="vert-title" class="title-text">Aguardando...</span>
                     </div>
                 </div>
-                <div id="channel-badge" class="channel-badge">@canal</div>
+                <div class="top-channel-bar">
+                    <button id="pill-ch1" class="btn-channel-pill" title="Alternar para @MundoNoCode">@MundoNoCode</button>
+                    <button id="pill-ch2" class="btn-channel-pill" title="Alternar para @gutaogamer3570">@gutaogamer3570</button>
+                </div>
+                <div id="channel-badge" class="channel-badge hidden">@canal</div>
             </div>
         </header>
 
@@ -206,8 +238,9 @@
                 </div>
 
                 <div class="setting-action-row">
-                    <button id="btn-force-check" class="btn-secondary">🔄 Forçar Checagem</button>
-                    <button id="btn-clear-chat" class="btn-danger">🗑️ Limpar Chat</button>
+                    <button id="btn-reopen-welcome" class="btn-secondary" title="Voltar à tela de seleção de canais">⇄ Trocar Canal</button>
+                    <button id="btn-force-check" class="btn-secondary">🔄 Checar</button>
+                    <button id="btn-clear-chat" class="btn-danger">🗑️ Limpar</button>
                     <button id="btn-logout" class="btn-secondary" title="Sair e bloquear">🔒 Bloquear</button>
                 </div>
             </div>

@@ -1,15 +1,17 @@
-// StreamChat Mobile - Multi-Stream Client com PIN & 2 Canais
+// StreamChat Mobile - Multi-Stream Client com Seleção Inicial de Canal
 const socket = io();
 
-// Elementos de Autenticação / PIN
-const pinScreen = document.getElementById('pin-screen');
+// Elementos da Tela Inicial de Seleção de Canal
+const welcomeScreen = document.getElementById('welcome-screen');
 const appContent = document.getElementById('app-content');
-const inputPin = document.getElementById('input-pin');
-const pinErrorMsg = document.getElementById('pin-error-msg');
-const btnSubmitPin = document.getElementById('btn-submit-pin');
+const btnChannelChoices = document.querySelectorAll('.btn-channel-choice');
+const inputDirectWelcome = document.getElementById('input-direct-welcome');
+const btnConnectDirect = document.getElementById('btn-connect-direct');
+const inputWelcomePin = document.getElementById('input-welcome-pin');
+const welcomePinError = document.getElementById('welcome-pin-error');
 const btnLogout = document.getElementById('btn-logout');
 
-// Elementos DOM do App
+// Elementos DOM do Topo e App
 const liveIndicatorDot = document.getElementById('live-indicator-dot');
 const liveIndicatorText = document.getElementById('live-indicator-text');
 const statTotalViewers = document.getElementById('stat-total-viewers');
@@ -21,6 +23,9 @@ const horizTitle = document.getElementById('horiz-title');
 const vertTitle = document.getElementById('vert-title');
 const channelBadge = document.getElementById('channel-badge');
 const offlineBanner = document.getElementById('offline-banner');
+
+const pillCh1 = document.getElementById('pill-ch1');
+const pillCh2 = document.getElementById('pill-ch2');
 
 const chatContainer = document.getElementById('chat-container');
 const chatMessages = document.getElementById('chat-messages');
@@ -57,10 +62,10 @@ const toggleAvatars = document.getElementById('toggle-avatars');
 const toggleSound = document.getElementById('toggle-sound');
 const sizeBtns = document.querySelectorAll('.size-btn');
 
-// Atalhos dos 2 canais
+// Atalhos dos 2 canais fixos
 const btnQuickCh1 = document.getElementById('btn-quick-ch1');
 const btnQuickCh2 = document.getElementById('btn-quick-ch2');
-let savedChannels = ['', ''];
+let savedChannels = ['@MundoNoCode', '@gutaogamer3570'];
 
 // Estado
 let isAuthenticated = false;
@@ -69,6 +74,7 @@ let userScrolledUp = false;
 let unreadCount = 0;
 let currentFilter = 'all';
 let messageCounts = { all: 0, horizontal: 0, vertical: 0 };
+let pendingSelection = null;
 
 const preferences = {
     fontSize: localStorage.getItem('chat_font_size') || 'medium',
@@ -88,62 +94,92 @@ function applyPreferences() {
 }
 applyPreferences();
 
-// --- Fluxo de Autenticação por PIN ---
-function tryAuth(pin) {
-    if (!pin) return;
-    socket.emit('auth', { pin });
-}
-
-function submitPin() {
-    const val = inputPin ? inputPin.value.trim() : '';
-    if (!val) return;
-    if (pinErrorMsg) pinErrorMsg.classList.add('hidden');
-    tryAuth(val);
-}
-
-const formPin = document.getElementById('form-pin');
-if (formPin) {
-    formPin.addEventListener('submit', (e) => {
-        e.preventDefault();
-        submitPin();
+// --- Fluxo de Seleção Inicial de Canal ---
+btnChannelChoices.forEach(btn => {
+    btn.addEventListener('click', () => {
+        const selected = btn.dataset.channel;
+        selectChannelAndEnter(selected, '');
     });
-}
-if (btnSubmitPin) {
-    btnSubmitPin.addEventListener('click', (e) => {
-        e.preventDefault();
-        submitPin();
+});
+
+if (btnConnectDirect) {
+    btnConnectDirect.addEventListener('click', () => {
+        const directVal = inputDirectWelcome ? inputDirectWelcome.value.trim() : '';
+        if (!directVal) return;
+        selectChannelAndEnter('', directVal);
     });
 }
 
-function checkAutoAuth() {
-    const savedPin = localStorage.getItem('streamer_pin') || '3006';
-    if (savedPin && socket.connected) {
-        tryAuth(savedPin);
+function selectChannelAndEnter(channel, directStream = '') {
+    const pin = (inputWelcomePin && inputWelcomePin.value.trim()) || localStorage.getItem('streamer_pin') || '3006';
+    pendingSelection = { channel, directStream };
+
+    if (welcomePinError) welcomePinError.classList.add('hidden');
+
+    if (isAuthenticated) {
+        applyPendingSelection();
+    } else {
+        socket.emit('auth', { pin });
     }
 }
 
-if (document.readyState === 'loading') {
-    window.addEventListener('DOMContentLoaded', checkAutoAuth);
-} else {
-    checkAutoAuth();
+function applyPendingSelection() {
+    if (!pendingSelection) return;
+    const { channel, directStream } = pendingSelection;
+
+    inputChannel.value = channel || '';
+    inputStreamHoriz.value = directStream || '';
+    inputStreamVert.value = '';
+
+    socket.emit('set-config', {
+        channel: channel || '',
+        streamHorizontal: directStream || '',
+        streamVertical: '',
+        savedChannels: savedChannels
+    });
+
+    updateQuickSwitchButtons(channel);
+    pendingSelection = null;
+}
+
+function switchChannel(channelName) {
+    if (!channelName) return;
+    inputChannel.value = channelName;
+    inputStreamHoriz.value = '';
+    inputStreamVert.value = '';
+
+    updateQuickSwitchButtons(channelName);
+
+    socket.emit('set-config', {
+        channel: channelName,
+        streamHorizontal: '',
+        streamVertical: '',
+        savedChannels: savedChannels
+    });
 }
 
 socket.on('auth-success', (data) => {
     isAuthenticated = true;
-    localStorage.setItem('streamer_pin', inputPin.value.trim() || localStorage.getItem('streamer_pin') || '3006');
-    pinScreen.classList.add('hidden');
-    appContent.classList.remove('hidden');
-
-    inputChannel.value = data.config.channel || '';
-    inputStreamHoriz.value = data.config.streamHorizontal || '';
-    inputStreamVert.value = data.config.streamVertical || '';
+    const currentPin = (inputWelcomePin && inputWelcomePin.value.trim()) || '3006';
+    localStorage.setItem('streamer_pin', currentPin);
 
     if (data.config.savedChannels && data.config.savedChannels.length > 0) {
         savedChannels = data.config.savedChannels;
     }
-    updateQuickSwitchButtons(data.config.channel);
 
-    updateStatus(data.status);
+    // Se o usuário já escolheu o canal na tela inicial, abre o app
+    if (pendingSelection) {
+        if (welcomeScreen) welcomeScreen.classList.add('hidden');
+        appContent.classList.remove('hidden');
+        applyPendingSelection();
+    } else {
+        // Se ainda não selecionou, aguarda a escolha do usuário na primeira tela
+        inputChannel.value = data.config.channel || '';
+        inputStreamHoriz.value = data.config.streamHorizontal || '';
+        inputStreamVert.value = data.config.streamVertical || '';
+        updateQuickSwitchButtons(data.config.channel);
+        updateStatus(data.status);
+    }
 
     chatMessages.innerHTML = '';
     messageCounts = { all: 0, horizontal: 0, vertical: 0 };
@@ -157,11 +193,9 @@ socket.on('auth-success', (data) => {
 socket.on('auth-failed', () => {
     isAuthenticated = false;
     localStorage.removeItem('streamer_pin');
-    pinScreen.classList.remove('hidden');
+    if (welcomeScreen) welcomeScreen.classList.remove('hidden');
     appContent.classList.add('hidden');
-    pinErrorMsg.classList.remove('hidden');
-    inputPin.value = '';
-    inputPin.focus();
+    if (welcomePinError) welcomePinError.classList.remove('hidden');
 });
 
 // Logout
@@ -171,38 +205,46 @@ btnLogout.addEventListener('click', () => {
     location.reload();
 });
 
-// Quick Switch dos 2 Canais
+// Atualiza o estado dos botões dos 2 canais
 function updateQuickSwitchButtons(currentChannel) {
-    btnQuickCh1.textContent = savedChannels[0] || 'Definir Canal 1';
-    btnQuickCh2.textContent = savedChannels[1] || 'Definir Canal 2';
+    if (btnQuickCh1) {
+        btnQuickCh1.textContent = savedChannels[0] || '@MundoNoCode';
+        btnQuickCh1.classList.toggle('active', currentChannel && currentChannel === savedChannels[0]);
+    }
+    if (btnQuickCh2) {
+        btnQuickCh2.textContent = savedChannels[1] || '@gutaogamer3570';
+        btnQuickCh2.classList.toggle('active', currentChannel && currentChannel === savedChannels[1]);
+    }
 
-    btnQuickCh1.classList.toggle('active', currentChannel && currentChannel === savedChannels[0]);
-    btnQuickCh2.classList.toggle('active', currentChannel && currentChannel === savedChannels[1]);
+    if (pillCh1) {
+        pillCh1.textContent = savedChannels[0] || '@MundoNoCode';
+        pillCh1.classList.toggle('active', currentChannel && currentChannel === savedChannels[0]);
+    }
+    if (pillCh2) {
+        pillCh2.textContent = savedChannels[1] || '@gutaogamer3570';
+        pillCh2.classList.toggle('active', currentChannel && currentChannel === savedChannels[1]);
+    }
 }
 
-btnQuickCh1.addEventListener('click', () => {
-    if (savedChannels[0]) {
-        inputChannel.value = savedChannels[0];
-        inputStreamHoriz.value = '';
-        inputStreamVert.value = '';
-    } else {
-        const cur = inputChannel.value.trim();
-        if (cur) savedChannels[0] = cur;
-    }
-    updateQuickSwitchButtons(inputChannel.value);
-});
+if (pillCh1) {
+    pillCh1.addEventListener('click', () => switchChannel(savedChannels[0] || '@MundoNoCode'));
+}
+if (pillCh2) {
+    pillCh2.addEventListener('click', () => switchChannel(savedChannels[1] || '@gutaogamer3570'));
+}
 
-btnQuickCh2.addEventListener('click', () => {
-    if (savedChannels[1]) {
-        inputChannel.value = savedChannels[1];
-        inputStreamHoriz.value = '';
-        inputStreamVert.value = '';
-    } else {
-        const cur = inputChannel.value.trim();
-        if (cur) savedChannels[1] = cur;
-    }
-    updateQuickSwitchButtons(inputChannel.value);
-});
+if (btnQuickCh1) {
+    btnQuickCh1.addEventListener('click', () => {
+        switchChannel(savedChannels[0] || '@MundoNoCode');
+        modalSettings.classList.add('hidden');
+    });
+}
+if (btnQuickCh2) {
+    btnQuickCh2.addEventListener('click', () => {
+        switchChannel(savedChannels[1] || '@gutaogamer3570');
+        modalSettings.classList.add('hidden');
+    });
+}
 
 // Som Super Chat
 function playSuperchatChime() {
@@ -470,6 +512,15 @@ btnSaveChannel.addEventListener('click', () => {
     updateQuickSwitchButtons(curChannel);
     modalSettings.classList.add('hidden');
 });
+
+const btnReopenWelcome = document.getElementById('btn-reopen-welcome');
+if (btnReopenWelcome) {
+    btnReopenWelcome.addEventListener('click', () => {
+        modalSettings.classList.add('hidden');
+        appContent.classList.add('hidden');
+        if (welcomeScreen) welcomeScreen.classList.remove('hidden');
+    });
+}
 
 btnForceCheck.addEventListener('click', () => {
     socket.emit('force-check');

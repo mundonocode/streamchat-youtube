@@ -13,10 +13,10 @@ const CONFIG_FILE = path.join(__dirname, 'config.json');
 // Carregar ou criar configuração
 let config = {
     pin: process.env.STREAMER_PIN || '3006',
-    channel: '',
+    channel: '@gutaogamer3570',
     streamHorizontal: '',
     streamVertical: '',
-    savedChannels: [],
+    savedChannels: ['@MundoNoCode', '@gutaogamer3570'],
     checkIntervalSeconds: 20
 };
 
