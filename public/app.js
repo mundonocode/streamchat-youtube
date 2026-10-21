@@ -67,6 +67,25 @@ const btnQuickCh1 = document.getElementById('btn-quick-ch1');
 const btnQuickCh2 = document.getElementById('btn-quick-ch2');
 let savedChannels = ['@MundoNoCode', '@gutaogamer3570'];
 
+// Elementos da Troca Rápida de URL / Live
+const btnQuickUrl = document.getElementById('btn-quick-url');
+const btnAddUrlBanner = document.getElementById('btn-add-url-banner');
+const modalQuickUrl = document.getElementById('modal-quick-url');
+const modalUrlOverlay = document.getElementById('modal-url-overlay');
+const btnCloseUrlModal = document.getElementById('btn-close-url-modal');
+const inputQuickLiveUrl = document.getElementById('input-quick-live-url');
+const btnQuickTypeHoriz = document.getElementById('btn-quick-type-horiz');
+const btnQuickTypeVert = document.getElementById('btn-quick-type-vert');
+const btnSubmitQuickUrl = document.getElementById('btn-submit-quick-url');
+
+// Controles de Direção de Rolagem (Baixo p/ Cima vs Novas no Topo)
+const btnToggleDirection = document.getElementById('btn-toggle-direction');
+const directionIcon = document.getElementById('direction-icon');
+const directionText = document.getElementById('direction-text');
+const btnDirBottom = document.getElementById('btn-dir-bottom');
+const btnDirTop = document.getElementById('btn-dir-top');
+let chatDirection = localStorage.getItem('chat_direction') || 'bottom-up';
+
 // Estado
 let isAuthenticated = false;
 let isPaused = false;
@@ -86,6 +105,7 @@ const preferences = {
 function applyPreferences() {
     document.body.className = `font-${preferences.fontSize}`;
     if (!preferences.showAvatars) document.body.classList.add('hide-avatars');
+    if (chatDirection === 'top-down') document.body.classList.add('chat-top-down');
     toggleAvatars.checked = preferences.showAvatars;
     toggleSound.checked = preferences.playSound;
 
@@ -93,7 +113,26 @@ function applyPreferences() {
         btn.classList.toggle('active', btn.dataset.size === preferences.fontSize);
     });
 }
+
+function applyChatDirection() {
+    const isTopDown = (chatDirection === 'top-down');
+    document.body.classList.toggle('chat-top-down', isTopDown);
+
+    if (directionIcon) directionIcon.textContent = isTopDown ? '⬇️' : '⬆️';
+    if (directionText) directionText.textContent = isTopDown ? 'Novas no Topo' : 'Baixo p/ Cima';
+
+    if (btnDirBottom) btnDirBottom.classList.toggle('active', !isTopDown);
+    if (btnDirTop) btnDirTop.classList.toggle('active', isTopDown);
+
+    if (isTopDown) {
+        chatContainer.scrollTop = 0;
+    } else {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+}
+
 applyPreferences();
+applyChatDirection();
 
 // --- Fluxo de Seleção Inicial de Canal ---
 btnChannelChoices.forEach(btn => {
@@ -266,24 +305,42 @@ function getAudioContext() {
 window.addEventListener('touchstart', () => getAudioContext(), { once: true });
 window.addEventListener('click', () => getAudioContext(), { once: true });
 
-// Alerta sutil e suave para mensagens normais (estilo "pop" minimalista)
+// Alerta sonoro nítido, encorpado e audível para mensagens normais
 function playMessagePop() {
     if (!preferences.playSound) return;
     try {
         const audioCtx = getAudioContext();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(650, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(450, audioCtx.currentTime + 0.08);
+        const now = audioCtx.currentTime;
 
-        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+        // Tom 1: Ataque arredondado e presente
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(600, now);
+        osc1.frequency.exponentialRampToValueAtTime(780, now + 0.08);
 
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.08);
+        gain1.gain.setValueAtTime(0.35, now);
+        gain1.gain.exponentialRampToValueAtTime(0.02, now + 0.12);
+
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.12);
+
+        // Tom 2: Campainha brilhante e clara (Dó6)
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(1046.50, now + 0.06);
+
+        gain2.gain.setValueAtTime(0.001, now);
+        gain2.gain.setValueAtTime(0.38, now + 0.06);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.start(now + 0.06);
+        osc2.stop(now + 0.28);
     } catch (e) {}
 }
 
@@ -514,7 +571,11 @@ function addMessage(data, isInitialLoad = false) {
 }
 
 function scrollToBottom() {
-    chatContainer.scrollTop = chatContainer.scrollHeight;
+    if (chatDirection === 'top-down') {
+        chatContainer.scrollTop = 0;
+    } else {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
     unreadCount = 0;
     btnScrollBottom.classList.add('hidden');
     userScrolledUp = false;
@@ -540,8 +601,14 @@ filterTabs.forEach(tab => {
 });
 
 chatContainer.addEventListener('scroll', () => {
-    const isAtBottom = chatContainer.scrollHeight - chatContainer.scrollTop <= chatContainer.clientHeight + 60;
-    if (isAtBottom) {
+    let isAtLatest = false;
+    if (chatDirection === 'top-down') {
+        isAtLatest = chatContainer.scrollTop <= 60;
+    } else {
+        isAtLatest = (chatContainer.scrollHeight - chatContainer.scrollTop <= chatContainer.clientHeight + 60);
+    }
+
+    if (isAtLatest) {
         userScrolledUp = false;
         unreadCount = 0;
         btnScrollBottom.classList.add('hidden');
@@ -796,8 +863,96 @@ toggleAvatars.addEventListener('change', (e) => {
 toggleSound.addEventListener('change', (e) => {
     preferences.playSound = e.target.checked;
     localStorage.setItem('chat_play_sound', preferences.playSound);
-    if (preferences.playSound) playSuperchatChime();
+    if (preferences.playSound) playMessagePop();
 });
+
+// --- Troca Rápida de URL da Live ---
+let selectedQuickType = 'horizontal';
+
+if (btnQuickTypeHoriz) {
+    btnQuickTypeHoriz.addEventListener('click', () => {
+        selectedQuickType = 'horizontal';
+        btnQuickTypeHoriz.classList.add('active');
+        if (btnQuickTypeVert) btnQuickTypeVert.classList.remove('active');
+    });
+}
+
+if (btnQuickTypeVert) {
+    btnQuickTypeVert.addEventListener('click', () => {
+        selectedQuickType = 'vertical';
+        btnQuickTypeVert.classList.add('active');
+        if (btnQuickTypeHoriz) btnQuickTypeHoriz.classList.remove('active');
+    });
+}
+
+function openQuickUrlModal() {
+    if (modalQuickUrl) {
+        if (inputQuickLiveUrl) inputQuickLiveUrl.value = '';
+        modalQuickUrl.classList.remove('hidden');
+        if (inputQuickLiveUrl) inputQuickLiveUrl.focus();
+    }
+}
+
+function closeQuickUrlModal() {
+    if (modalQuickUrl) modalQuickUrl.classList.add('hidden');
+}
+
+if (btnQuickUrl) btnQuickUrl.addEventListener('click', openQuickUrlModal);
+if (btnAddUrlBanner) btnAddUrlBanner.addEventListener('click', openQuickUrlModal);
+if (btnCloseUrlModal) btnCloseUrlModal.addEventListener('click', closeQuickUrlModal);
+if (modalUrlOverlay) modalUrlOverlay.addEventListener('click', closeQuickUrlModal);
+
+if (btnSubmitQuickUrl) {
+    btnSubmitQuickUrl.addEventListener('click', () => {
+        const urlVal = inputQuickLiveUrl ? inputQuickLiveUrl.value.trim() : '';
+        if (!urlVal) {
+            alert('Por favor, cole o link ou ID da live do YouTube.');
+            return;
+        }
+
+        const newConfig = {
+            channel: inputChannel.value.trim(),
+            streamHorizontal: selectedQuickType === 'horizontal' ? urlVal : inputStreamHoriz.value.trim(),
+            streamVertical: selectedQuickType === 'vertical' ? urlVal : inputStreamVert.value.trim(),
+            savedChannels: savedChannels
+        };
+
+        if (selectedQuickType === 'horizontal') {
+            inputStreamHoriz.value = urlVal;
+        } else {
+            inputStreamVert.value = urlVal;
+        }
+
+        socket.emit('set-config', newConfig);
+        socket.emit('force-check');
+        closeQuickUrlModal();
+    });
+}
+
+// --- Controles de Direção de Rolagem ---
+function toggleChatDirection() {
+    chatDirection = (chatDirection === 'bottom-up') ? 'top-down' : 'bottom-up';
+    localStorage.setItem('chat_direction', chatDirection);
+    applyChatDirection();
+}
+
+if (btnToggleDirection) btnToggleDirection.addEventListener('click', toggleChatDirection);
+
+if (btnDirBottom) {
+    btnDirBottom.addEventListener('click', () => {
+        chatDirection = 'bottom-up';
+        localStorage.setItem('chat_direction', chatDirection);
+        applyChatDirection();
+    });
+}
+
+if (btnDirTop) {
+    btnDirTop.addEventListener('click', () => {
+        chatDirection = 'top-down';
+        localStorage.setItem('chat_direction', chatDirection);
+        applyChatDirection();
+    });
+}
 
 socket.on('connect', () => {
     socketStatusDot.className = 'dot dot-green';

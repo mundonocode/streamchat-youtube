@@ -386,10 +386,17 @@ body.hide-avatars .message-avatar { display: none !important; }
     color: #38bdf8;
     box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
 }
-    border-radius: 4px;
-    font-weight: 700;
-    font-size: 10px;
-    margin-left: 6px;
+.btn-channel-pill.btn-url-pill {
+    background: rgba(168, 85, 247, 0.15);
+    border-color: rgba(168, 85, 247, 0.4);
+    color: #c084fc;
+}
+.btn-channel-pill.btn-url-pill:hover,
+.btn-channel-pill.btn-url-pill.active {
+    background: rgba(168, 85, 247, 0.3);
+    border-color: #a855f7;
+    color: #fff;
+    box-shadow: 0 0 8px rgba(168, 85, 247, 0.3);
 }
 
 .stream-status-row {
@@ -470,7 +477,8 @@ body.hide-avatars .message-avatar { display: none !important; }
     flex: 1;
     overflow-y: auto;
     padding: 8px 10px;
-    scroll-behavior: smooth;
+    display: flex;
+    flex-direction: column;
     -webkit-overflow-scrolling: touch;
 }
 
@@ -478,7 +486,44 @@ body.hide-avatars .message-avatar { display: none !important; }
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding-bottom: 15px;
+    padding-bottom: 12px;
+    margin-top: auto; /* Ancoragem no rodapé: mensagens sobem de baixo para cima */
+    width: 100%;
+}
+
+/* Modo Alternativo: Novas Mensagens no Topo */
+body.chat-top-down .messages-list {
+    margin-top: 0;
+    margin-bottom: auto;
+    flex-direction: column-reverse;
+}
+
+.banner-action-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 10px;
+    width: 100%;
+    flex-wrap: wrap;
+}
+
+.dir-btn {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.dir-btn.active {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: #38bdf8;
+    color: #38bdf8;
 }
 
 /* Cartões com Cores Distintas para Horizontal e Vertical */
