@@ -12,9 +12,11 @@ const CONFIG_FILE = path.join(__dirname, 'config.json');
 
 // Carregar ou criar configuração
 let config = {
+    pin: process.env.STREAMER_PIN || '3006',
     channel: '',
     streamHorizontal: '',
     streamVertical: '',
+    savedChannels: [],
     checkIntervalSeconds: 20
 };
 
@@ -72,7 +74,6 @@ const MAX_RECENT_MESSAGES = 200;
 let liveChatInstances = { horizontal: null, vertical: null };
 let monitorInterval = null;
 
-// Obter IP local da máquina
 function getLocalIP() {
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
@@ -85,18 +86,14 @@ function getLocalIP() {
     return 'localhost';
 }
 
-// Extrair videoId de URLs do YouTube
 function extractVideoId(input) {
     if (!input) return null;
     const clean = input.trim();
-    if (clean.length === 11 && /^[a-zA-Z0-9_-]+$/.test(clean)) {
-        return clean;
-    }
+    if (clean.length === 11 && /^[a-zA-Z0-9_-]+$/.test(clean)) return clean;
     const match = clean.match(/(?:watch\?v=|youtu\.be\/|shorts\/|live\/)([a-zA-Z0-9_-]{11})/);
     return match ? match[1] : null;
 }
 
-// Checar status de um vídeo específico
 async function checkSingleStream(videoId) {
     if (!videoId) return { isLive: false };
     const url = `https://www.youtube.com/watch?v=${videoId}`;
@@ -137,13 +134,11 @@ async function checkSingleStream(videoId) {
     }
 }
 
-// Buscar lives ativas na página do canal
 async function discoverChannelLives(channelInput) {
     let clean = channelInput.trim().replace(/^@/, '');
     const foundIds = new Set();
     const liveResults = [];
 
-    // URLs para varrer: /live e /streams
     const urlsToScan = [
         `https://www.youtube.com/@${clean}/live`,
         `https://www.youtube.com/@${clean}/streams`
@@ -159,22 +154,17 @@ async function discoverChannelLives(channelInput) {
                 redirect: 'follow'
             });
 
-            // Se foi redirecionado para um /watch?v=VIDEO_ID
             const finalWatchMatch = res.url.match(/watch\?v=([a-zA-Z0-9_-]{11})/);
-            if (finalWatchMatch) {
-                foundIds.add(finalWatchMatch[1]);
-            }
+            if (finalWatchMatch) foundIds.add(finalWatchMatch[1]);
 
             const html = await res.text();
             
-            // Buscar videoIds associados a "LIVE" no HTML
             const regex = /"videoId":"([a-zA-Z0-9_-]{11})"[^}]+?"style":"LIVE"/g;
             let match;
             while ((match = regex.exec(html)) !== null) {
                 foundIds.add(match[1]);
             }
 
-            // Padrão alternativo: thumbnailOverlays com LIVE
             const matchesAll = [...html.matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)].map(m => m[1]);
             for (const vid of matchesAll.slice(0, 15)) {
                 if (html.includes(vid) && html.includes('"style":"LIVE"')) {
@@ -186,23 +176,18 @@ async function discoverChannelLives(channelInput) {
         }
     }
 
-    // Verificar os IDs encontrados para confirmar se estão ao vivo
     for (const vid of foundIds) {
         const streamData = await checkSingleStream(vid);
-        if (streamData.isLive) {
-            liveResults.push(streamData);
-        }
+        if (streamData.isLive) liveResults.push(streamData);
     }
 
     return liveResults;
 }
 
-// Checagem principal de lives
 async function checkAllStreams() {
     const customHorizId = extractVideoId(config.streamHorizontal);
     const customVertId = extractVideoId(config.streamVertical);
 
-    // Se o usuário configurou links manuais diretamente
     if (customHorizId || customVertId) {
         if (customHorizId) {
             const dataH = await checkSingleStream(customHorizId);
@@ -218,18 +203,15 @@ async function checkAllStreams() {
             updateStreamState('vertical', { isLive: false });
         }
     } else if (config.channel) {
-        // Detecção automática no canal
         const activeLives = await discoverChannelLives(config.channel);
         
         if (activeLives.length === 0) {
             updateStreamState('horizontal', { isLive: false });
             updateStreamState('vertical', { isLive: false });
         } else if (activeLives.length === 1) {
-            // Apenas uma live ativa
             updateStreamState('horizontal', activeLives[0]);
             updateStreamState('vertical', { isLive: false });
         } else {
-            // Duas ou mais lives ativas! Identificar se tem menção a Vertical/Shorts no título
             let horiz = null;
             let vert = null;
 
@@ -242,7 +224,6 @@ async function checkAllStreams() {
                 }
             }
 
-            // Se não diferenciou pelo título, coloca a primeira como Horizontal e a segunda como Vertical
             if (!horiz) horiz = activeLives[0];
             if (!vert) vert = activeLives[1] || activeLives[0];
 
@@ -254,7 +235,6 @@ async function checkAllStreams() {
         updateStreamState('vertical', { isLive: false, error: 'Canal não configurado' });
     }
 
-    // Emitir atualização de estado com estatísticas somadas e separadas
     emitStateUpdate();
 }
 
@@ -290,18 +270,14 @@ function updateStreamState(type, data) {
 function startChatForStream(type, liveId) {
     stopChatForStream(type);
 
-    console.log(`[CHAT-${type.toUpperCase()}] Conectando ao chat da live ${liveId}...`);
+    console.log(`[CHAT-${type.toUpperCase()}] Conectando: ${liveId}`);
     const chatInstance = new LiveChat({ liveId });
     liveChatInstances[type] = chatInstance;
-
-    chatInstance.on('start', (id) => {
-        console.log(`[CHAT-${type.toUpperCase()}] Monitorando: ${id}`);
-    });
 
     chatInstance.on('chat', (chatItem) => {
         const parsedMessage = {
             id: chatItem.id || `${Date.now()}-${Math.random()}`,
-            streamType: type, // 'horizontal' ou 'vertical'
+            streamType: type,
             streamLabel: type === 'horizontal' ? 'Horizontal' : 'Vertical',
             timestamp: chatItem.timestamp || new Date(),
             author: {
@@ -329,7 +305,8 @@ function startChatForStream(type, liveId) {
             recentMessages.shift();
         }
 
-        io.emit('new-message', parsedMessage);
+        // Envia apenas para sockets autenticados
+        io.to('authenticated').emit('new-message', parsedMessage);
     });
 
     chatInstance.on('error', (err) => {
@@ -337,7 +314,7 @@ function startChatForStream(type, liveId) {
     });
 
     chatInstance.start().catch(err => {
-        console.error(`[CHAT-${type.toUpperCase()}] Exceção ao iniciar:`, err.message);
+        console.error(`[CHAT-${type.toUpperCase()}] Exceção:`, err.message);
     });
 }
 
@@ -348,7 +325,6 @@ function stopChatForStream(type) {
     }
 }
 
-// Converter texto de viewers para número e somar
 function parseViewers(val) {
     if (!val) return 0;
     const clean = val.replace(/[^0-9]/g, '');
@@ -373,51 +349,44 @@ function getAggregatedStats() {
 }
 
 function emitStateUpdate() {
-    io.emit('status-update', getAggregatedStats());
+    io.to('authenticated').emit('status-update', getAggregatedStats());
 }
 
-// Rotas da API
-app.get('/api/state', (req, res) => {
-    res.json({
-        config,
-        status: getAggregatedStats(),
-        recentMessages
-    });
-});
-
-app.post('/api/config', async (req, res) => {
-    const { channel, streamHorizontal, streamVertical } = req.body;
-    if (channel !== undefined) config.channel = (channel || '').trim();
-    if (streamHorizontal !== undefined) config.streamHorizontal = (streamHorizontal || '').trim();
-    if (streamVertical !== undefined) config.streamVertical = (streamVertical || '').trim();
-    
-    saveConfig();
-
-    stopChatForStream('horizontal');
-    stopChatForStream('vertical');
-    recentMessages = [];
-
-    await checkAllStreams();
-    res.json({ success: true, config, status: getAggregatedStats() });
-});
-
-app.post('/api/check-now', async (req, res) => {
-    await checkAllStreams();
-    res.json({ success: true, status: getAggregatedStats() });
-});
-
-// Socket.io
+// Socket.io com Proteção por PIN
 io.on('connection', (socket) => {
-    socket.emit('init', {
-        config,
-        status: getAggregatedStats(),
-        recentMessages
+    // Cliente tenta autenticar
+    socket.on('auth', ({ pin }) => {
+        if (pin && String(pin).trim() === String(config.pin).trim()) {
+            socket.join('authenticated');
+            socket.emit('auth-success', {
+                config: {
+                    channel: config.channel,
+                    streamHorizontal: config.streamHorizontal,
+                    streamVertical: config.streamVertical,
+                    savedChannels: config.savedChannels || []
+                },
+                status: getAggregatedStats(),
+                recentMessages
+            });
+        } else {
+            socket.emit('auth-failed', { message: 'PIN incorreto' });
+        }
     });
 
+    // Alterar configurações (somente autenticado)
     socket.on('set-config', async (newConfig) => {
+        if (!socket.rooms.has('authenticated')) return;
+
         if (newConfig.channel !== undefined) config.channel = newConfig.channel.trim();
         if (newConfig.streamHorizontal !== undefined) config.streamHorizontal = newConfig.streamHorizontal.trim();
         if (newConfig.streamVertical !== undefined) config.streamVertical = newConfig.streamVertical.trim();
+        if (newConfig.savedChannels !== undefined) config.savedChannels = newConfig.savedChannels;
+
+        // Se pediu para mudar o PIN
+        if (newConfig.newPin && String(newConfig.newPin).trim().length >= 4) {
+            config.pin = String(newConfig.newPin).trim();
+        }
+
         saveConfig();
 
         stopChatForStream('horizontal');
@@ -428,11 +397,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('force-check', async () => {
+        if (!socket.rooms.has('authenticated')) return;
         await checkAllStreams();
     });
 });
 
-// Inicialização
 function startMonitoring() {
     checkAllStreams();
     if (monitorInterval) clearInterval(monitorInterval);
@@ -441,6 +410,7 @@ function startMonitoring() {
 
 server.listen(PORT, '0.0.0.0', () => {
     const localIP = getLocalIP();
-    console.log(`🚀 Servidor Multi-Stream iniciado em http://${localIP}:${PORT}`);
+    console.log(`🚀 Servidor protegido por PIN rodando em http://${localIP}:${PORT}`);
+    console.log(`🔑 PIN Atual: ${config.pin}`);
     startMonitoring();
 });

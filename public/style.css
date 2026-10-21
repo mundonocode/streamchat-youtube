@@ -33,6 +33,75 @@ body {
     user-select: text;
 }
 
+/* Tela de Bloqueio por PIN */
+.pin-screen {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at center, #181d2a 0%, #0a0b10 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 999;
+}
+
+.pin-screen.hidden { display: none; }
+
+.pin-card {
+    background: #141724;
+    border: 1px solid var(--border-color);
+    padding: 28px 22px;
+    border-radius: 14px;
+    width: 100%;
+    max-width: 340px;
+    text-align: center;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+}
+
+.pin-icon { font-size: 38px; margin-bottom: 10px; }
+.pin-card h2 { font-size: 19px; color: #fff; margin-bottom: 6px; }
+.pin-card p { font-size: 12px; color: var(--text-secondary); margin-bottom: 18px; }
+
+.pin-input {
+    width: 100%;
+    background: var(--bg-main);
+    border: 1.5px solid var(--border-color);
+    color: #fff;
+    font-size: 26px;
+    text-align: center;
+    letter-spacing: 12px;
+    padding: 10px;
+    border-radius: 8px;
+    outline: none;
+    margin-bottom: 10px;
+    transition: border-color 0.2s;
+}
+.pin-input:focus { border-color: #38bdf8; }
+
+.pin-error {
+    display: block;
+    color: #f87171;
+    font-size: 12px;
+    margin-bottom: 10px;
+}
+
+.pin-hint {
+    display: block;
+    margin-top: 14px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.btn-full { width: 100%; padding: 12px; font-size: 15px; }
+
+/* Conteúdo do App */
+.app-content {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
 /* Tamanhos de Fonte */
 body.font-small .chat-area { font-size: 13px; }
 body.font-medium .chat-area { font-size: 15px; }
@@ -148,6 +217,9 @@ body.hide-avatars .message-avatar { display: none !important; }
 
 /* Linha com os títulos das duas lives */
 .live-title-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-top: 4px;
     padding-top: 3px;
     border-top: 1px solid rgba(255,255,255,0.05);
@@ -158,6 +230,18 @@ body.hide-avatars .message-avatar { display: none !important; }
     display: flex;
     flex-direction: column;
     gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.channel-badge {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 10px;
+    margin-left: 6px;
 }
 
 .stream-status-row {
@@ -263,13 +347,11 @@ body.hide-avatars .message-avatar { display: none !important; }
     border-left: 3.5px solid transparent;
 }
 
-/* Live Horizontal: Ciano / Azul */
 .message-card.stream-horizontal {
     border-left-color: var(--color-horiz);
     background: linear-gradient(90deg, rgba(56, 189, 248, 0.06) 0%, rgba(19, 22, 32, 1) 40%);
 }
 
-/* Live Vertical / Shorts: Rosa / Magenta */
 .message-card.stream-vertical {
     border-left-color: var(--color-vert);
     background: linear-gradient(90deg, rgba(232, 121, 249, 0.06) 0%, rgba(19, 22, 32, 1) 40%);
@@ -297,7 +379,6 @@ body.hide-avatars .message-avatar { display: none !important; }
     margin-right: 4px;
 }
 
-/* Tag que identifica de onde veio a mensagem */
 .stream-origin-tag {
     font-size: 9px;
     font-weight: 800;
@@ -485,7 +566,37 @@ body.hide-avatars .message-avatar { display: none !important; }
     width: 100%;
 }
 .hint-text { font-size: 10px; color: var(--text-muted); }
-.manual-override-box {
+
+/* Quick Switch de Canais */
+.channel-quick-switch {
+    background: rgba(0,0,0,0.25);
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+.switch-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 5px;
+}
+.btn-quick {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: #fff;
+    padding: 7px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.btn-quick.active {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+
+.manual-override-box, .pin-change-box {
     background: rgba(0,0,0,0.25);
     padding: 8px;
     border-radius: 6px;

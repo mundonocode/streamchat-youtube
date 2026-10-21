@@ -1,7 +1,15 @@
-// StreamChat Mobile - Multi-Stream Client
+// StreamChat Mobile - Multi-Stream Client com PIN & 2 Canais
 const socket = io();
 
-// Elementos DOM
+// Elementos de Autenticação / PIN
+const pinScreen = document.getElementById('pin-screen');
+const appContent = document.getElementById('app-content');
+const inputPin = document.getElementById('input-pin');
+const pinErrorMsg = document.getElementById('pin-error-msg');
+const btnSubmitPin = document.getElementById('btn-submit-pin');
+const btnLogout = document.getElementById('btn-logout');
+
+// Elementos DOM do App
 const liveIndicatorDot = document.getElementById('live-indicator-dot');
 const liveIndicatorText = document.getElementById('live-indicator-text');
 const statTotalViewers = document.getElementById('stat-total-viewers');
@@ -11,6 +19,7 @@ const statLikes = document.getElementById('stat-likes');
 
 const horizTitle = document.getElementById('horiz-title');
 const vertTitle = document.getElementById('vert-title');
+const channelBadge = document.getElementById('channel-badge');
 const offlineBanner = document.getElementById('offline-banner');
 
 const chatContainer = document.getElementById('chat-container');
@@ -39,6 +48,7 @@ const btnCloseModal = document.getElementById('btn-close-modal');
 const inputChannel = document.getElementById('input-channel');
 const inputStreamHoriz = document.getElementById('input-stream-horiz');
 const inputStreamVert = document.getElementById('input-stream-vert');
+const inputNewPin = document.getElementById('input-new-pin');
 const btnSaveChannel = document.getElementById('btn-save-channel');
 const btnForceCheck = document.getElementById('btn-force-check');
 const btnCheckNowBanner = document.getElementById('btn-check-now-banner');
@@ -47,11 +57,17 @@ const toggleAvatars = document.getElementById('toggle-avatars');
 const toggleSound = document.getElementById('toggle-sound');
 const sizeBtns = document.querySelectorAll('.size-btn');
 
+// Atalhos dos 2 canais
+const btnQuickCh1 = document.getElementById('btn-quick-ch1');
+const btnQuickCh2 = document.getElementById('btn-quick-ch2');
+let savedChannels = ['', ''];
+
 // Estado
+let isAuthenticated = false;
 let isPaused = false;
 let userScrolledUp = false;
 let unreadCount = 0;
-let currentFilter = 'all'; // 'all', 'horizontal', 'vertical'
+let currentFilter = 'all';
 let messageCounts = { all: 0, horizontal: 0, vertical: 0 };
 
 const preferences = {
@@ -72,6 +88,104 @@ function applyPreferences() {
 }
 applyPreferences();
 
+// --- Fluxo de Autenticação por PIN ---
+function tryAuth(pin) {
+    if (!pin) return;
+    socket.emit('auth', { pin });
+}
+
+function submitPin() {
+    const val = inputPin.value.trim();
+    if (!val) return;
+    pinErrorMsg.classList.add('hidden');
+    tryAuth(val);
+}
+
+// Ao abrir no celular: verifica se já tem PIN salvo
+window.addEventListener('DOMContentLoaded', () => {
+    const savedPin = localStorage.getItem('streamer_pin') || '3006';
+    if (savedPin) {
+        tryAuth(savedPin);
+    }
+});
+
+socket.on('auth-success', (data) => {
+    isAuthenticated = true;
+    localStorage.setItem('streamer_pin', inputPin.value.trim() || localStorage.getItem('streamer_pin') || '3006');
+    pinScreen.classList.add('hidden');
+    appContent.classList.remove('hidden');
+
+    inputChannel.value = data.config.channel || '';
+    inputStreamHoriz.value = data.config.streamHorizontal || '';
+    inputStreamVert.value = data.config.streamVertical || '';
+
+    if (data.config.savedChannels && data.config.savedChannels.length > 0) {
+        savedChannels = data.config.savedChannels;
+    }
+    updateQuickSwitchButtons(data.config.channel);
+
+    updateStatus(data.status);
+
+    chatMessages.innerHTML = '';
+    messageCounts = { all: 0, horizontal: 0, vertical: 0 };
+
+    if (data.recentMessages && data.recentMessages.length > 0) {
+        data.recentMessages.forEach(msg => addMessage(msg, true));
+        scrollToBottom();
+    }
+});
+
+socket.on('auth-failed', () => {
+    isAuthenticated = false;
+    localStorage.removeItem('streamer_pin');
+    pinScreen.classList.remove('hidden');
+    appContent.classList.add('hidden');
+    pinErrorMsg.classList.remove('hidden');
+    inputPin.value = '';
+    inputPin.focus();
+});
+
+// Logout
+btnLogout.addEventListener('click', () => {
+    localStorage.removeItem('streamer_pin');
+    modalSettings.classList.add('hidden');
+    location.reload();
+});
+
+// Quick Switch dos 2 Canais
+function updateQuickSwitchButtons(currentChannel) {
+    btnQuickCh1.textContent = savedChannels[0] || 'Definir Canal 1';
+    btnQuickCh2.textContent = savedChannels[1] || 'Definir Canal 2';
+
+    btnQuickCh1.classList.toggle('active', currentChannel && currentChannel === savedChannels[0]);
+    btnQuickCh2.classList.toggle('active', currentChannel && currentChannel === savedChannels[1]);
+}
+
+btnQuickCh1.addEventListener('click', () => {
+    if (savedChannels[0]) {
+        inputChannel.value = savedChannels[0];
+        inputStreamHoriz.value = '';
+        inputStreamVert.value = '';
+    } else {
+        const cur = inputChannel.value.trim();
+        if (cur) savedChannels[0] = cur;
+    }
+    updateQuickSwitchButtons(inputChannel.value);
+});
+
+btnQuickCh2.addEventListener('click', () => {
+    if (savedChannels[1]) {
+        inputChannel.value = savedChannels[1];
+        inputStreamHoriz.value = '';
+        inputStreamVert.value = '';
+    } else {
+        const cur = inputChannel.value.trim();
+        if (cur) savedChannels[1] = cur;
+    }
+    updateQuickSwitchButtons(inputChannel.value);
+});
+
+// Som Super Chat
 function playSuperchatChime() {
     if (!preferences.playSound) return;
     try {
@@ -105,9 +219,9 @@ function updateStatus(status) {
         offlineBanner.classList.remove('hidden');
     }
 
-    // Espectadores
     statTotalViewers.textContent = status.totalViewers || '0';
     statLikes.textContent = status.totalLikes || '0';
+    channelBadge.textContent = status.channel || '@não definido';
 
     if (status.streams) {
         const h = status.streams.horizontal;
@@ -116,12 +230,11 @@ function updateStatus(status) {
         statHorizViewers.textContent = h && h.isLive ? h.viewers : 'off';
         statVertViewers.textContent = v && v.isLive ? v.viewers : 'off';
 
-        horizTitle.textContent = h && h.isLive ? h.title : (h.liveId ? 'Conectado (Aguardando stream)' : 'Offline');
-        vertTitle.textContent = v && v.isLive ? v.title : (v.liveId ? 'Conectado (Aguardando stream)' : 'Offline');
+        horizTitle.textContent = h && h.isLive ? h.title : (h.liveId ? 'Conectado' : 'Offline');
+        vertTitle.textContent = v && v.isLive ? v.title : (v.liveId ? 'Conectado' : 'Offline');
     }
 }
 
-// Criar elemento de mensagem com distinção clara de cores
 function createMessageElement(data) {
     const card = document.createElement('div');
     card.className = `message-card stream-${data.streamType || 'horizontal'}`;
@@ -133,7 +246,6 @@ function createMessageElement(data) {
 
     if (data.superchat) card.classList.add('superchat');
 
-    // Avatar
     const avatar = document.createElement('img');
     avatar.className = 'message-avatar';
     avatar.src = data.author.thumbnail || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23647087"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
@@ -141,11 +253,9 @@ function createMessageElement(data) {
     avatar.alt = data.author.name;
     card.appendChild(avatar);
 
-    // Corpo
     const body = document.createElement('div');
     body.className = 'message-body';
 
-    // Superchat
     if (data.superchat) {
         const scBadge = document.createElement('span');
         scBadge.className = 'superchat-amount';
@@ -154,18 +264,15 @@ function createMessageElement(data) {
         body.appendChild(scBadge);
     }
 
-    // Cabeçalho da mensagem
     const header = document.createElement('span');
     header.className = 'message-header';
 
-    // Tag que mostra de qual live veio
     const originTag = document.createElement('span');
     const isVert = data.streamType === 'vertical';
     originTag.className = `stream-origin-tag ${isVert ? 'vert' : 'horiz'}`;
-    originTag.textContent = isVert ? '📱 VERTICAL' : '🖥️ HORIZONTAL';
+    originTag.textContent = isVert ? '📱 VERT' : '🖥️ HORIZ';
     header.appendChild(originTag);
 
-    // Autor
     const author = document.createElement('span');
     author.className = 'author-name';
     if (data.isOwner) author.classList.add('is-owner');
@@ -173,7 +280,6 @@ function createMessageElement(data) {
     author.textContent = data.author.name;
     header.appendChild(author);
 
-    // Badges
     if (data.isOwner) {
         const b = document.createElement('span');
         b.className = 'badge-tag owner';
@@ -194,7 +300,6 @@ function createMessageElement(data) {
 
     body.appendChild(header);
 
-    // Texto + emojis
     const textSpan = document.createElement('span');
     textSpan.className = 'message-text';
 
@@ -215,7 +320,6 @@ function createMessageElement(data) {
     }
     body.appendChild(textSpan);
 
-    // Horário
     if (data.timestamp) {
         const time = new Date(data.timestamp);
         const timeSpan = document.createElement('span');
@@ -322,19 +426,36 @@ btnCloseModal.addEventListener('click', () => modalSettings.classList.add('hidde
 modalOverlay.addEventListener('click', () => modalSettings.classList.add('hidden'));
 
 btnSaveChannel.addEventListener('click', () => {
+    const curChannel = inputChannel.value.trim();
+
+    // Se salvou um canal que ainda não estava na lista de rápidos, adiciona
+    if (curChannel && !savedChannels.includes(curChannel)) {
+        if (!savedChannels[0]) savedChannels[0] = curChannel;
+        else if (!savedChannels[1]) savedChannels[1] = curChannel;
+    }
+
     const payload = {
-        channel: inputChannel.value.trim(),
+        channel: curChannel,
         streamHorizontal: inputStreamHoriz.value.trim(),
-        streamVertical: inputStreamVert.value.trim()
+        streamVertical: inputStreamVert.value.trim(),
+        savedChannels: savedChannels
     };
+
+    if (inputNewPin.value.trim()) {
+        payload.newPin = inputNewPin.value.trim();
+        localStorage.setItem('streamer_pin', payload.newPin);
+        inputNewPin.value = '';
+    }
+
     socket.emit('set-config', payload);
+    updateQuickSwitchButtons(curChannel);
     modalSettings.classList.add('hidden');
 });
 
 btnForceCheck.addEventListener('click', () => {
     socket.emit('force-check');
     btnForceCheck.textContent = 'Checando...';
-    setTimeout(() => { btnForceCheck.textContent = '🔄 Forçar Verificação'; }, 2000);
+    setTimeout(() => { btnForceCheck.textContent = '🔄 Forçar Checagem'; }, 2000);
 });
 
 btnCheckNowBanner.addEventListener('click', () => {
@@ -374,10 +495,11 @@ toggleSound.addEventListener('change', (e) => {
     if (preferences.playSound) playSuperchatChime();
 });
 
-// Socket.io
 socket.on('connect', () => {
     socketStatusDot.className = 'dot dot-green';
     socketStatusText.textContent = 'Conectado';
+    const savedPin = localStorage.getItem('streamer_pin') || '3006';
+    if (savedPin) tryAuth(savedPin);
 });
 
 socket.on('disconnect', () => {
@@ -385,26 +507,10 @@ socket.on('disconnect', () => {
     socketStatusText.textContent = 'Reconectando...';
 });
 
-socket.on('init', (data) => {
-    inputChannel.value = data.config.channel || '';
-    inputStreamHoriz.value = data.config.streamHorizontal || '';
-    inputStreamVert.value = data.config.streamVertical || '';
-
-    updateStatus(data.status);
-
-    chatMessages.innerHTML = '';
-    messageCounts = { all: 0, horizontal: 0, vertical: 0 };
-
-    if (data.recentMessages && data.recentMessages.length > 0) {
-        data.recentMessages.forEach(msg => addMessage(msg, true));
-        scrollToBottom();
-    }
-});
-
 socket.on('status-update', (status) => {
-    updateStatus(status);
+    if (isAuthenticated) updateStatus(status);
 });
 
 socket.on('new-message', (msg) => {
-    addMessage(msg, false);
+    if (isAuthenticated) addMessage(msg, false);
 });
