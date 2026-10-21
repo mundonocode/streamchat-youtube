@@ -430,7 +430,6 @@ function startOfficialLiveChat(type, activeLiveChatId) {
                     recentMessages.push(parsedMessage);
                     if (recentMessages.length > MAX_RECENT_MESSAGES) recentMessages.shift();
 
-                    io.to('authenticated').emit('new-message', parsedMessage);
                     io.emit('new-message', parsedMessage);
                 }
             }
@@ -529,7 +528,6 @@ function startFallbackLiveChat(type, liveId) {
             recentMessages.shift();
         }
 
-        io.to('authenticated').emit('new-message', parsedMessage);
         io.emit('new-message', parsedMessage);
     });
 
@@ -575,7 +573,6 @@ function getAggregatedStats() {
 
 function emitStateUpdate() {
     const stats = getAggregatedStats();
-    io.to('authenticated').emit('status-update', stats);
     io.emit('status-update', stats);
 }
 

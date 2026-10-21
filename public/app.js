@@ -75,11 +75,12 @@ let unreadCount = 0;
 let currentFilter = 'all';
 let messageCounts = { all: 0, horizontal: 0, vertical: 0 };
 let pendingSelection = null;
+const seenMessageIds = new Set();
 
 const preferences = {
     fontSize: localStorage.getItem('chat_font_size') || 'medium',
     showAvatars: localStorage.getItem('chat_show_avatars') !== 'false',
-    playSound: localStorage.getItem('chat_play_sound') === 'true'
+    playSound: localStorage.getItem('chat_play_sound') !== 'false'
 };
 
 function applyPreferences() {
@@ -249,11 +250,48 @@ if (btnQuickCh2) {
     });
 }
 
-// Som Super Chat
+// Áudio e Efeitos Sonoros
+let sharedAudioCtx = null;
+function getAudioContext() {
+    if (!sharedAudioCtx) {
+        sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+        sharedAudioCtx.resume().catch(() => {});
+    }
+    return sharedAudioCtx;
+}
+
+// Desbloqueia o áudio no primeiro toque na tela (exigência do iOS / Android)
+window.addEventListener('touchstart', () => getAudioContext(), { once: true });
+window.addEventListener('click', () => getAudioContext(), { once: true });
+
+// Alerta sutil e suave para mensagens normais (estilo "pop" minimalista)
+function playMessagePop() {
+    if (!preferences.playSound) return;
+    try {
+        const audioCtx = getAudioContext();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(650, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(450, audioCtx.currentTime + 0.08);
+
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.08);
+    } catch (e) {}
+}
+
+// Som destacado para Super Chat
 function playSuperchatChime() {
     if (!preferences.playSound) return;
     try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const audioCtx = getAudioContext();
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = 'sine';
@@ -397,6 +435,16 @@ function createMessageElement(data) {
 }
 
 function addMessage(data, isInitialLoad = false) {
+    // Prevenção contra mensagens duplicadas
+    if (data.id && seenMessageIds.has(data.id)) return;
+    if (data.id) {
+        seenMessageIds.add(data.id);
+        if (seenMessageIds.size > 500) {
+            const first = seenMessageIds.values().next().value;
+            seenMessageIds.delete(first);
+        }
+    }
+
     messageCounts.all++;
     const type = data.streamType || 'horizontal';
     if (messageCounts[type] !== undefined) messageCounts[type]++;
@@ -408,8 +456,12 @@ function addMessage(data, isInitialLoad = false) {
     const el = createMessageElement(data);
     chatMessages.appendChild(el);
 
-    if (!isInitialLoad && data.superchat) {
-        playSuperchatChime();
+    if (!isInitialLoad) {
+        if (data.superchat) {
+            playSuperchatChime();
+        } else {
+            playMessagePop();
+        }
     }
 
     if (chatMessages.children.length > 250) {
