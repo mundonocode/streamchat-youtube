@@ -2,10 +2,18 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { LiveChat } = require('youtube-chat');
+const axios = require('axios');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+
+// Configurar cabeçalhos padrão do axios para contornar bloqueios do YouTube em nuvem (Render)
+axios.defaults.headers.common['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+axios.defaults.headers.common['Accept-Language'] = 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7';
+
+// Credenciais Oficiais da API do YouTube (Data API v3)
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'AIzaSyACe1D8TksPKt2nSOqgg0WOfZ1bl8SzVkk';
 
 const PORT = process.env.PORT || 3000;
 const CONFIG_FILE = path.join(__dirname, 'config.json');
@@ -96,6 +104,40 @@ function extractVideoId(input) {
 
 async function checkSingleStream(videoId, isManual = false) {
     if (!videoId) return { isLive: false };
+
+    // 1. Tentar via API Oficial do YouTube primeiro (100% confiável, sem bloqueio no Render)
+    if (YOUTUBE_API_KEY) {
+        try {
+            const apiUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails,statistics&id=${videoId}&key=${YOUTUBE_API_KEY}`;
+            const apiRes = await fetch(apiUrl);
+            if (apiRes.ok) {
+                const apiData = await apiRes.json();
+                if (apiData.items && apiData.items.length > 0) {
+                    const item = apiData.items[0];
+                    const isLive = item.snippet.liveBroadcastContent === 'live' || !!(item.liveStreamingDetails && item.liveStreamingDetails.activeLiveChatId) || isManual;
+                    const viewers = item.liveStreamingDetails?.concurrentViewers || '0';
+                    const likes = item.statistics?.likeCount || '0';
+                    const title = item.snippet.title || `Live (${videoId})`;
+                    const activeLiveChatId = item.liveStreamingDetails?.activeLiveChatId || null;
+
+                    console.log(`[API-CHECK] Vídeo ${videoId}: isLive=${isLive}, viewers=${viewers}, liveChatId=${activeLiveChatId}`);
+
+                    return {
+                        isLive,
+                        liveId: videoId,
+                        viewers,
+                        likes,
+                        title,
+                        activeLiveChatId
+                    };
+                }
+            }
+        } catch (apiErr) {
+            console.error(`[API-CHECK] Erro ao consultar video ${videoId} na API:`, apiErr.message);
+        }
+    }
+
+    // 2. Fallback via Scraping Web
     const url = `https://www.youtube.com/watch?v=${videoId}`;
 
     try {
@@ -120,7 +162,6 @@ async function checkSingleStream(videoId, isManual = false) {
         let isLive = false;
         if (!isEnded) {
             if (isManual) {
-                // Se for link direto (público ou não-listado), aceita e conecta o chat!
                 isLive = true;
             } else {
                 isLive = html.includes('"isLive":true') || 
@@ -135,13 +176,22 @@ async function checkSingleStream(videoId, isManual = false) {
         const viewersMatch = html.match(/"videoViewCountRenderer":\{"viewCount":\{"runs":\[\{"text":"([^"]+)"\}/) ||
                              html.match(/"viewCount":\{"runs":\[\{"text":"([^"]+)"\}/) ||
                              html.match(/"shortViewCount":\{"runs":\[\{"text":"([^"]+)"\}/) ||
-                             html.match(/"originalText":"([^"]+)"/);
-        if (viewersMatch) viewers = viewersMatch[1];
+                             html.match(/"originalText":"([^"]+)"/) ||
+                             html.match(/"text":"([0-9.,]+)\s*(?:assistindo|watching|espectadores)"/i);
+        if (viewersMatch) {
+            const rawV = viewersMatch[1];
+            const cleanDigits = rawV.replace(/[^0-9]/g, '');
+            viewers = cleanDigits || '0';
+        }
 
         let likes = '0';
         const likesMatch = html.match(/"accessibility":\{"accessibilityData":\{"label":"([0-9.,]+)\s*(?:marcações de gostei|gostei|likes)"/i) ||
-                           html.match(/"defaultText":\{"accessibility":\{"accessibilityData":\{"label":"([0-9.,]+)\s*(?:gostei|likes)"/i);
-        if (likesMatch) likes = likesMatch[1];
+                           html.match(/"defaultText":\{"accessibility":\{"accessibilityData":\{"label":"([0-9.,]+)\s*(?:gostei|likes)"/i) ||
+                           html.match(/"label":"([0-9.,]+)\s*(?:marcações de gostei|gostei|likes)"/i);
+        if (likesMatch) {
+            const cleanLikes = likesMatch[1].replace(/[^0-9]/g, '');
+            likes = cleanLikes || '0';
+        }
 
         return { isLive, liveId: videoId, viewers, likes, title: title || `Live (${videoId})` };
     } catch (err) {
@@ -237,18 +287,26 @@ async function checkAllStreams() {
     }
 
     if (customHorizId || customVertId) {
-        if (customHorizId) {
-            const dataH = await checkSingleStream(customHorizId, true);
-            updateStreamState('horizontal', dataH);
-        } else {
-            updateStreamState('horizontal', { isLive: false });
-        }
-
-        if (customVertId) {
+        if (customHorizId && !customVertId) {
+            const data = await checkSingleStream(customHorizId, true);
+            const titleLower = (data.title || '').toLowerCase();
+            const isPortrait = titleLower.includes('portrait') || titleLower.includes('vertical') || titleLower.includes('shorts') || titleLower.includes('celular') || titleLower.includes('9:16');
+            if (isPortrait) {
+                updateStreamState('vertical', data);
+                updateStreamState('horizontal', { isLive: false });
+            } else {
+                updateStreamState('horizontal', data);
+                updateStreamState('vertical', { isLive: false });
+            }
+        } else if (customVertId && !customHorizId) {
             const dataV = await checkSingleStream(customVertId, true);
             updateStreamState('vertical', dataV);
+            updateStreamState('horizontal', { isLive: false });
         } else {
-            updateStreamState('vertical', { isLive: false });
+            const dataH = await checkSingleStream(customHorizId, true);
+            const dataV = await checkSingleStream(customVertId, true);
+            updateStreamState('horizontal', dataH);
+            updateStreamState('vertical', dataV);
         }
     } else if (config.channel) {
         const activeLives = await discoverChannelLives(config.channel);
@@ -294,13 +352,14 @@ function updateStreamState(type, data) {
         current.isLive = true;
         current.liveId = data.liveId;
         current.title = data.title || current.title;
-        current.viewers = data.viewers || '0';
-        current.likes = data.likes || '0';
+        current.viewers = data.viewers || current.viewers || '0';
+        current.likes = data.likes || current.likes || '0';
+        current.activeLiveChatId = data.activeLiveChatId || current.activeLiveChatId || null;
         current.error = null;
 
         if (wasOffline) {
             current.startTime = new Date().toISOString();
-            startChatForStream(type, data.liveId);
+            startChatForStream(type, data.liveId, current.activeLiveChatId);
         }
     } else {
         if (current.isLive) {
@@ -311,25 +370,130 @@ function updateStreamState(type, data) {
         current.viewers = '0';
         current.likes = '0';
         current.startTime = null;
+        current.activeLiveChatId = null;
         current.error = data.error || null;
     }
 }
 
-function startChatForStream(type, liveId) {
+let officialPollers = { horizontal: null, vertical: null };
+let officialPageTokens = { horizontal: null, vertical: null };
+
+function startOfficialLiveChat(type, activeLiveChatId) {
+    stopOfficialLiveChat(type);
+    console.log(`[API-CHAT-${type.toUpperCase()}] Conectado à API Oficial do YouTube! (ChatId: ${activeLiveChatId})`);
+    officialPageTokens[type] = null;
+    streams[type].isLive = true;
+    emitStateUpdate();
+
+    async function poll() {
+        try {
+            let url = `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${activeLiveChatId}&part=snippet,authorDetails&key=${YOUTUBE_API_KEY}`;
+            if (officialPageTokens[type]) {
+                url += `&pageToken=${officialPageTokens[type]}`;
+            }
+
+            const res = await fetch(url);
+            const data = await res.json();
+
+            if (data.nextPageToken) {
+                officialPageTokens[type] = data.nextPageToken;
+            }
+
+            if (data.items && data.items.length > 0) {
+                for (const item of data.items) {
+                    if (recentMessages.some(m => m.id === item.id)) continue;
+
+                    const msgText = item.snippet?.displayMessage || item.snippet?.textMessageDetails?.messageText || '';
+                    console.log(`[CHAT-${type.toUpperCase()}] ${item.authorDetails?.displayName}: ${msgText}`);
+
+                    const parsedMessage = {
+                        id: item.id || `msg-${Date.now()}-${Math.random()}`,
+                        streamType: type,
+                        streamLabel: type === 'vertical' ? 'Vertical' : 'Horizontal',
+                        timestamp: item.snippet?.publishedAt || new Date(),
+                        author: {
+                            name: item.authorDetails?.displayName || 'Espectador',
+                            channelId: item.authorDetails?.channelId || '',
+                            thumbnail: item.authorDetails?.profileImageUrl || null
+                        },
+                        message: [{ type: 'text', text: msgText }],
+                        superchat: item.snippet?.type === 'superChatEvent' ? {
+                            amount: item.snippet?.superChatDetails?.amountDisplayString || 'Super Chat',
+                            color: 'gold'
+                        } : null,
+                        isMembership: !!item.authorDetails?.isChatSponsor,
+                        isVerified: !!item.authorDetails?.isVerified,
+                        isOwner: !!item.authorDetails?.isChatOwner,
+                        isModerator: !!item.authorDetails?.isChatModerator
+                    };
+
+                    recentMessages.push(parsedMessage);
+                    if (recentMessages.length > MAX_RECENT_MESSAGES) recentMessages.shift();
+
+                    io.to('authenticated').emit('new-message', parsedMessage);
+                    io.emit('new-message', parsedMessage);
+                }
+            }
+
+            const delay = Math.max(data.pollingIntervalMillis || 2000, 1500);
+            officialPollers[type] = setTimeout(poll, delay);
+        } catch (e) {
+            console.error(`[API-CHAT-${type.toUpperCase()}] Erro no polling:`, e.message);
+            officialPollers[type] = setTimeout(poll, 4000);
+        }
+    }
+
+    poll();
+}
+
+function stopOfficialLiveChat(type) {
+    if (officialPollers[type]) {
+        clearTimeout(officialPollers[type]);
+        officialPollers[type] = null;
+    }
+    officialPageTokens[type] = null;
+}
+
+function startChatForStream(type, liveId, activeLiveChatId) {
     stopChatForStream(type);
 
-    console.log(`[CHAT-${type.toUpperCase()}] Conectando: ${liveId}`);
+    if (activeLiveChatId) {
+        startOfficialLiveChat(type, activeLiveChatId);
+        return;
+    }
+
+    // Se temos a API key, tenta buscar o activeLiveChatId da live
+    if (YOUTUBE_API_KEY && liveId) {
+        fetch(`https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${liveId}&key=${YOUTUBE_API_KEY}`)
+            .then(r => r.json())
+            .then(data => {
+                const chatId = data.items?.[0]?.liveStreamingDetails?.activeLiveChatId;
+                if (chatId) {
+                    startOfficialLiveChat(type, chatId);
+                } else {
+                    startFallbackLiveChat(type, liveId);
+                }
+            })
+            .catch(() => startFallbackLiveChat(type, liveId));
+        return;
+    }
+
+    startFallbackLiveChat(type, liveId);
+}
+
+function startFallbackLiveChat(type, liveId) {
+    console.log(`[FALLBACK-CHAT-${type.toUpperCase()}] Conectando: ${liveId}`);
     const chatInstance = new LiveChat({ liveId });
     liveChatInstances[type] = chatInstance;
 
     chatInstance.on('start', (startedId) => {
-        console.log(`[CHAT-${type.toUpperCase()}] Conectado ao chat com sucesso! (${startedId})`);
+        console.log(`[FALLBACK-CHAT-${type.toUpperCase()}] Conectado ao chat com sucesso! (${startedId})`);
         streams[type].isLive = true;
         emitStateUpdate();
     });
 
     chatInstance.on('end', (reason) => {
-        console.log(`[CHAT-${type.toUpperCase()}] Transmissão encerrada: ${reason || 'finalizada'}`);
+        console.log(`[FALLBACK-CHAT-${type.toUpperCase()}] Transmissão encerrada: ${reason || 'finalizada'}`);
         streams[type].isLive = false;
         emitStateUpdate();
     });
@@ -365,20 +529,21 @@ function startChatForStream(type, liveId) {
             recentMessages.shift();
         }
 
-        // Envia apenas para sockets autenticados
         io.to('authenticated').emit('new-message', parsedMessage);
+        io.emit('new-message', parsedMessage);
     });
 
     chatInstance.on('error', (err) => {
-        console.error(`[CHAT-${type.toUpperCase()}] Erro:`, err.message);
+        console.error(`[FALLBACK-CHAT-${type.toUpperCase()}] Erro:`, err.message);
     });
 
     chatInstance.start().catch(err => {
-        console.error(`[CHAT-${type.toUpperCase()}] Exceção:`, err.message);
+        console.error(`[FALLBACK-CHAT-${type.toUpperCase()}] Exceção:`, err.message);
     });
 }
 
 function stopChatForStream(type) {
+    stopOfficialLiveChat(type);
     if (liveChatInstances[type]) {
         try { liveChatInstances[type].stop(); } catch (e) {}
         liveChatInstances[type] = null;
@@ -409,7 +574,9 @@ function getAggregatedStats() {
 }
 
 function emitStateUpdate() {
-    io.to('authenticated').emit('status-update', getAggregatedStats());
+    const stats = getAggregatedStats();
+    io.to('authenticated').emit('status-update', stats);
+    io.emit('status-update', stats);
 }
 
 // Socket.io com Proteção por PIN

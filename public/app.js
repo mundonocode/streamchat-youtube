@@ -127,6 +127,9 @@ function applyPendingSelection() {
     if (!pendingSelection) return;
     const { channel, directStream } = pendingSelection;
 
+    if (welcomeScreen) welcomeScreen.classList.add('hidden');
+    if (appContent) appContent.classList.remove('hidden');
+
     inputChannel.value = channel || '';
     inputStreamHoriz.value = directStream || '';
     inputStreamVert.value = '';
@@ -282,14 +285,14 @@ function updateStatus(status) {
 
     statTotalViewers.textContent = status.totalViewers || '0';
     statLikes.textContent = status.totalLikes || '0';
-    channelBadge.textContent = status.channel || '@não definido';
+    channelBadge.textContent = status.channel || (status.isLive ? 'Live Ativa' : '@não definido');
 
     if (status.streams) {
         const h = status.streams.horizontal;
         const v = status.streams.vertical;
 
-        statHorizViewers.textContent = h && h.isLive ? h.viewers : 'off';
-        statVertViewers.textContent = v && v.isLive ? v.viewers : 'off';
+        statHorizViewers.textContent = h && h.isLive ? (h.viewers || '0') : 'off';
+        statVertViewers.textContent = v && v.isLive ? (v.viewers || '0') : 'off';
 
         horizTitle.textContent = h && h.isLive ? h.title : (h.liveId ? 'Conectado' : 'Offline');
         vertTitle.textContent = v && v.isLive ? v.title : (v.liveId ? 'Conectado' : 'Offline');
