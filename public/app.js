@@ -306,6 +306,28 @@ function playSuperchatChime() {
     } catch (e) {}
 }
 
+// Som comemorativo alegre para Novos Inscritos / Membros
+function playSubscriptionChime() {
+    if (!preferences.playSound) return;
+    try {
+        const audioCtx = getAudioContext();
+        const notes = [523.25, 659.25, 783.99]; // Dó, Mi, Sol
+        notes.forEach((freq, idx) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const startTime = audioCtx.currentTime + (idx * 0.1);
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, startTime);
+            gain.gain.setValueAtTime(0.18, startTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.25);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(startTime);
+            osc.stop(startTime + 0.25);
+        });
+    } catch (e) {}
+}
+
 function updateStatus(status) {
     const isLive = status.isLive;
 
@@ -347,6 +369,7 @@ function createMessageElement(data) {
     }
 
     if (data.superchat) card.classList.add('superchat');
+    if (data.isNewSubscription) card.classList.add('subscription-event');
 
     const avatar = document.createElement('img');
     avatar.className = 'message-avatar';
@@ -358,6 +381,15 @@ function createMessageElement(data) {
     const body = document.createElement('div');
     body.className = 'message-body';
 
+    // Destaque de Novo Membro / Inscrito
+    if (data.isNewSubscription) {
+        const subBadge = document.createElement('div');
+        subBadge.className = 'subscription-badge';
+        subBadge.textContent = '🎉 NOVO INSCRITO / MEMBRO VIP';
+        body.appendChild(subBadge);
+    }
+
+    // Destaque de Super Chat
     if (data.superchat) {
         const scBadge = document.createElement('span');
         scBadge.className = 'superchat-amount';
@@ -366,7 +398,8 @@ function createMessageElement(data) {
         body.appendChild(scBadge);
     }
 
-    const header = document.createElement('span');
+    // Linha 1: Cabeçalho com Origem, Nome do Usuário, Badges e Horário
+    const header = document.createElement('div');
     header.className = 'message-header';
 
     const originTag = document.createElement('span');
@@ -400,10 +433,19 @@ function createMessageElement(data) {
         header.appendChild(b);
     }
 
+    if (data.timestamp) {
+        const time = new Date(data.timestamp);
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'message-time';
+        timeSpan.textContent = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
+        header.appendChild(timeSpan);
+    }
+
     body.appendChild(header);
 
-    const textSpan = document.createElement('span');
-    textSpan.className = 'message-text';
+    // Linha 2: Mensagem sempre abaixo do nome para clareza total
+    const textDiv = document.createElement('div');
+    textDiv.className = 'message-text';
 
     if (Array.isArray(data.message)) {
         data.message.forEach(item => {
@@ -412,23 +454,15 @@ function createMessageElement(data) {
                 img.src = item.url;
                 img.alt = item.alt;
                 img.className = 'chat-emoji';
-                textSpan.appendChild(img);
+                textDiv.appendChild(img);
             } else {
-                textSpan.appendChild(document.createTextNode(item.text));
+                textDiv.appendChild(document.createTextNode(item.text));
             }
         });
     } else if (typeof data.message === 'string') {
-        textSpan.textContent = data.message;
+        textDiv.textContent = data.message;
     }
-    body.appendChild(textSpan);
-
-    if (data.timestamp) {
-        const time = new Date(data.timestamp);
-        const timeSpan = document.createElement('span');
-        timeSpan.className = 'message-time';
-        timeSpan.textContent = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
-        body.appendChild(timeSpan);
-    }
+    body.appendChild(textDiv);
 
     card.appendChild(body);
     return card;
@@ -457,7 +491,9 @@ function addMessage(data, isInitialLoad = false) {
     chatMessages.appendChild(el);
 
     if (!isInitialLoad) {
-        if (data.superchat) {
+        if (data.isNewSubscription) {
+            playSubscriptionChime();
+        } else if (data.superchat) {
             playSuperchatChime();
         } else {
             playMessagePop();
@@ -586,6 +622,7 @@ btnForceCheck.addEventListener('click', () => {
 // Botões de Teste Visual
 const btnTestNormal = document.getElementById('btn-test-normal');
 const btnTestSuperchat = document.getElementById('btn-test-superchat');
+const btnTestSub = document.getElementById('btn-test-sub');
 
 if (btnTestNormal) {
     btnTestNormal.addEventListener('click', () => {
@@ -608,6 +645,122 @@ if (btnTestSuperchat) {
         modalSettings.classList.add('hidden');
     });
 }
+
+if (btnTestSub) {
+    btnTestSub.addEventListener('click', () => {
+        socket.emit('simulate-test-message', {
+            type: currentFilter === 'vertical' ? 'vertical' : 'horizontal',
+            isSubscription: true
+        });
+        modalSettings.classList.add('hidden');
+    });
+}
+
+// --- Manter Tela Sempre Ativa (Wake Lock / Anti-Bloqueio) ---
+let wakeLock = null;
+let wakeLockEnabled = localStorage.getItem('chat_wake_lock') !== 'false';
+const btnToggleWake = document.getElementById('btn-toggle-wake');
+const toggleWakeLock = document.getElementById('toggle-wake-lock');
+let wakeVideo = null;
+let isVideoWakeActive = false;
+
+async function requestWakeLock() {
+    if (!wakeLockEnabled) return;
+    try {
+        if ('wakeLock' in navigator) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => {
+                wakeLock = null;
+                updateWakeLockUI();
+            });
+            console.log('☀️ Wake Lock ativo: tela não irá bloquear.');
+        } else {
+            enableVideoWakeFallback();
+        }
+    } catch (err) {
+        console.warn('Wake Lock fallback ativado:', err.message);
+        enableVideoWakeFallback();
+    }
+    updateWakeLockUI();
+}
+
+function releaseWakeLock() {
+    if (wakeLock) {
+        wakeLock.release().catch(() => {});
+        wakeLock = null;
+    }
+    disableVideoWakeFallback();
+    updateWakeLockUI();
+}
+
+function enableVideoWakeFallback() {
+    if (!wakeVideo) {
+        wakeVideo = document.createElement('video');
+        wakeVideo.setAttribute('playsinline', '');
+        wakeVideo.setAttribute('loop', '');
+        wakeVideo.muted = true;
+        wakeVideo.style.position = 'fixed';
+        wakeVideo.style.top = '-9999px';
+        wakeVideo.style.left = '-9999px';
+        wakeVideo.style.width = '1px';
+        wakeVideo.style.height = '1px';
+        wakeVideo.style.opacity = '0.01';
+        wakeVideo.src = 'data:video/mp4;base64,AAAAHGZ0eXBtcDQyAAAAAG1wNDJpc29tYXZjMQAAABBtb292AAAAbW12aGQAAAAA1F9/4NRff+AAAA+gAAAAAAABAAEAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAB0dHJhazAAAAA=';
+        document.body.appendChild(wakeVideo);
+    }
+    wakeVideo.play().then(() => {
+        isVideoWakeActive = true;
+        updateWakeLockUI();
+    }).catch(() => {});
+}
+
+function disableVideoWakeFallback() {
+    if (wakeVideo) {
+        wakeVideo.pause();
+        isVideoWakeActive = false;
+    }
+}
+
+function updateWakeLockUI() {
+    const isActive = wakeLockEnabled && (wakeLock !== null || isVideoWakeActive);
+    if (btnToggleWake) {
+        btnToggleWake.classList.toggle('active', isActive);
+        btnToggleWake.innerHTML = isActive 
+            ? '<span id="wake-icon">☀️</span> <span id="wake-text">Tela Ativa</span>'
+            : '<span id="wake-icon">🌙</span> <span id="wake-text">Tela Normal</span>';
+    }
+    if (toggleWakeLock) {
+        toggleWakeLock.checked = wakeLockEnabled;
+    }
+}
+
+if (btnToggleWake) {
+    btnToggleWake.addEventListener('click', () => {
+        wakeLockEnabled = !wakeLockEnabled;
+        localStorage.setItem('chat_wake_lock', wakeLockEnabled);
+        if (wakeLockEnabled) requestWakeLock();
+        else releaseWakeLock();
+    });
+}
+
+if (toggleWakeLock) {
+    toggleWakeLock.addEventListener('change', (e) => {
+        wakeLockEnabled = e.target.checked;
+        localStorage.setItem('chat_wake_lock', wakeLockEnabled);
+        if (wakeLockEnabled) requestWakeLock();
+        else releaseWakeLock();
+    });
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && wakeLockEnabled) {
+        requestWakeLock();
+    }
+});
+
+window.addEventListener('touchstart', () => requestWakeLock(), { once: true });
+window.addEventListener('click', () => requestWakeLock(), { once: true });
+requestWakeLock();
 
 btnCheckNowBanner.addEventListener('click', () => {
     socket.emit('force-check');

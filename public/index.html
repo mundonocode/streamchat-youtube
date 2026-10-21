@@ -151,6 +151,10 @@
             </div>
 
             <div class="footer-controls">
+                <button id="btn-toggle-wake" class="btn-chip active" title="Manter a tela sempre ligada (sem bloquear)">
+                    <span id="wake-icon">☀️</span>
+                    <span id="wake-text">Tela Ativa</span>
+                </button>
                 <button id="btn-toggle-pause" class="btn-chip" title="Pausar rolagem automática">
                     <span id="pause-icon">⏸️</span>
                     <span id="pause-text">Pausar</span>
@@ -206,8 +210,9 @@
                 <div class="test-tools-box">
                     <span class="sub-label">🧪 Teste Visual Imediato (sem precisar de live):</span>
                     <div class="test-action-buttons">
-                        <button id="btn-test-normal" class="btn-secondary" type="button">💬 Mensagem Normal</button>
+                        <button id="btn-test-normal" class="btn-secondary" type="button">💬 Mensagem</button>
                         <button id="btn-test-superchat" class="btn-superchat-test" type="button">⭐ Super Chat</button>
+                        <button id="btn-test-sub" class="btn-sub-test" type="button">🎉 Inscrito</button>
                     </div>
                 </div>
 
@@ -227,6 +232,13 @@
                     <label class="toggle-label">
                         <input type="checkbox" id="toggle-avatars" checked>
                         <span>Exibir fotos de perfil (avatares)</span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="toggle-wake-lock" checked>
+                        <span>☀️ Manter tela sempre acesa (sem bloquear)</span>
                     </label>
                 </div>
 

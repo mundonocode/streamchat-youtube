@@ -403,7 +403,17 @@ function startOfficialLiveChat(type, activeLiveChatId) {
                 for (const item of data.items) {
                     if (recentMessages.some(m => m.id === item.id)) continue;
 
-                    const msgText = item.snippet?.displayMessage || item.snippet?.textMessageDetails?.messageText || '';
+                    const eventType = item.snippet?.type || '';
+                    const isNewSubOrMember = eventType === 'newSponsorEvent' || 
+                                            eventType === 'memberMilestoneChatEvent' || 
+                                            eventType === 'membershipGiftingEvent' || 
+                                            eventType === 'giftMembershipReceivedEvent';
+                    
+                    let msgText = item.snippet?.displayMessage || item.snippet?.textMessageDetails?.messageText || '';
+                    if (isNewSubOrMember && !msgText) {
+                        msgText = '🎉 Acabou de se tornar membro / se inscreveu no canal!';
+                    }
+
                     console.log(`[CHAT-${type.toUpperCase()}] ${item.authorDetails?.displayName}: ${msgText}`);
 
                     const parsedMessage = {
@@ -417,11 +427,12 @@ function startOfficialLiveChat(type, activeLiveChatId) {
                             thumbnail: item.authorDetails?.profileImageUrl || null
                         },
                         message: [{ type: 'text', text: msgText }],
+                        isNewSubscription: isNewSubOrMember,
                         superchat: item.snippet?.type === 'superChatEvent' ? {
                             amount: item.snippet?.superChatDetails?.amountDisplayString || 'Super Chat',
                             color: 'gold'
                         } : null,
-                        isMembership: !!item.authorDetails?.isChatSponsor,
+                        isMembership: isNewSubOrMember || !!item.authorDetails?.isChatSponsor,
                         isVerified: !!item.authorDetails?.isVerified,
                         isOwner: !!item.authorDetails?.isChatOwner,
                         isModerator: !!item.authorDetails?.isChatModerator
@@ -646,14 +657,19 @@ io.on('connection', (socket) => {
                 { type: 'text', text: (data && data.text) || (data && data.isSuperchat ? 'Super Chat de Teste! Mandou bem demais na live!' : 'Mensagem de teste recebida com sucesso! O chat está conectado.') }
             ],
             superchat: (data && data.isSuperchat) ? { amount: 'R$ 20,00', color: 'orange' } : null,
-            isMembership: !!(data && data.isMembership),
+            isMembership: !!(data && data.isMembership) || !!(data && data.isSubscription),
+            isNewSubscription: !!(data && data.isSubscription),
             isVerified: false,
             isOwner: false,
             isModerator: false
         };
+        if (data && data.isSubscription) {
+            fakeMsg.author.name = 'Lucas Inscrito VIP 🌟';
+            fakeMsg.message = [{ type: 'text', text: '🎉 Acabou de se inscrever no canal!' }];
+        }
         recentMessages.push(fakeMsg);
         if (recentMessages.length > MAX_RECENT_MESSAGES) recentMessages.shift();
-        io.to('authenticated').emit('new-message', fakeMsg);
+        io.emit('new-message', fakeMsg);
     });
 });
 
