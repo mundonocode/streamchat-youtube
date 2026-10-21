@@ -381,11 +381,11 @@ function createMessageElement(data) {
     const body = document.createElement('div');
     body.className = 'message-body';
 
-    // Destaque de Novo Membro / Inscrito
+    // Destaque de Novo Inscrito
     if (data.isNewSubscription) {
         const subBadge = document.createElement('div');
         subBadge.className = 'subscription-badge';
-        subBadge.textContent = '🎉 NOVO INSCRITO / MEMBRO VIP';
+        subBadge.textContent = '🎉 NOVO INSCRITO';
         body.appendChild(subBadge);
     }
 

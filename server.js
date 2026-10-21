@@ -276,9 +276,85 @@ async function discoverChannelLives(channelInput) {
     return liveResults;
 }
 
+// Monitoramento de Novos Inscritos do Canal em Tempo Real
+const KNOWN_CHANNELS = {
+    '@gutaogamer3570': 'UCQmzosKpFBhO6uuSSqjT0HA',
+    '@MundoNoCode': 'UCcF15OEU0AkdD7ecfBlRWmQ'
+};
+let channelSubscribers = {};
+
+async function checkSubscribersUpdate(channelInput) {
+    if (!channelInput || !YOUTUBE_API_KEY) return;
+    try {
+        let channelId = KNOWN_CHANNELS[channelInput] || null;
+        if (!channelId) {
+            const clean = channelInput.replace(/^@/, '');
+            const resC = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=${clean}&key=${YOUTUBE_API_KEY}`);
+            const dataC = await resC.json();
+            if (dataC.items && dataC.items.length > 0) {
+                channelId = dataC.items[0].id;
+                KNOWN_CHANNELS[channelInput] = channelId;
+            }
+        }
+
+        if (!channelId) return;
+
+        const url = `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&id=${channelId}&key=${YOUTUBE_API_KEY}`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        const item = data.items?.[0];
+        if (!item || !item.statistics) return;
+
+        const count = parseInt(item.statistics.subscriberCount, 10);
+        if (isNaN(count)) return;
+
+        const previous = channelSubscribers[channelId];
+        channelSubscribers[channelId] = count;
+
+        // Se a contagem de inscritos aumentou durante a live!
+        if (previous !== undefined && count > previous) {
+            const diff = count - previous;
+            console.log(`[NOVO INSCRITO] 🎉 Canal ${item.snippet.title} ganhou +${diff} inscrito(s)! Total: ${count}`);
+
+            const alertMsg = {
+                id: `sub-${Date.now()}-${Math.random()}`,
+                streamType: 'horizontal',
+                streamLabel: 'Inscrito',
+                timestamp: new Date(),
+                author: {
+                    name: 'Novo Inscrito',
+                    channelId: channelId,
+                    thumbnail: item.snippet?.thumbnails?.default?.url || 'https://yt3.ggpht.com/a/default-user=s88-c-k-c0x00ffffff-no-rj'
+                },
+                message: [{
+                    type: 'text',
+                    text: `🎉 +${diff} NOVO INSCRITO! O canal atingiu ${count.toLocaleString('pt-BR')} inscritos!`
+                }],
+                isNewSubscription: true,
+                isMembership: false,
+                isVerified: true,
+                isOwner: false,
+                isModerator: false
+            };
+
+            recentMessages.push(alertMsg);
+            if (recentMessages.length > MAX_RECENT_MESSAGES) recentMessages.shift();
+            io.emit('new-message', alertMsg);
+        }
+    } catch (e) {
+        console.error('Erro ao verificar inscritos:', e.message);
+    }
+}
+
 async function checkAllStreams() {
     let customHorizId = extractVideoId(config.streamHorizontal);
     let customVertId = extractVideoId(config.streamVertical);
+
+    // Checar novos inscritos no canal configurado
+    if (config.channel) {
+        checkSubscribersUpdate(config.channel).catch(() => {});
+    }
 
     // Se o usuário digitou link/ID direto de vídeo no campo do canal
     if (!customHorizId && config.channel) {
@@ -410,8 +486,18 @@ function startOfficialLiveChat(type, activeLiveChatId) {
                                             eventType === 'giftMembershipReceivedEvent';
                     
                     let msgText = item.snippet?.displayMessage || item.snippet?.textMessageDetails?.messageText || '';
+                    const lowerText = msgText.toLowerCase();
+                    const isMentioningSub = lowerText.includes('me inscrevi') || 
+                                           lowerText.includes('novo inscrito') || 
+                                           lowerText.includes('nova inscrita') || 
+                                           lowerText.includes('+1 inscrito') || 
+                                           lowerText.includes('+1 sub') ||
+                                           lowerText.includes('acabei de me inscrever');
+
+                    const isSubscription = isNewSubOrMember || isMentioningSub;
+
                     if (isNewSubOrMember && !msgText) {
-                        msgText = '🎉 Acabou de se tornar membro / se inscreveu no canal!';
+                        msgText = '🎉 Acabou de se inscrever no canal!';
                     }
 
                     console.log(`[CHAT-${type.toUpperCase()}] ${item.authorDetails?.displayName}: ${msgText}`);
@@ -422,12 +508,12 @@ function startOfficialLiveChat(type, activeLiveChatId) {
                         streamLabel: type === 'vertical' ? 'Vertical' : 'Horizontal',
                         timestamp: item.snippet?.publishedAt || new Date(),
                         author: {
-                            name: item.authorDetails?.displayName || 'Espectador',
+                            name: item.authorDetails?.displayName || (isSubscription ? 'Novo Inscrito' : 'Espectador'),
                             channelId: item.authorDetails?.channelId || '',
                             thumbnail: item.authorDetails?.profileImageUrl || null
                         },
                         message: [{ type: 'text', text: msgText }],
-                        isNewSubscription: isNewSubOrMember,
+                        isNewSubscription: isSubscription,
                         superchat: item.snippet?.type === 'superChatEvent' ? {
                             amount: item.snippet?.superChatDetails?.amountDisplayString || 'Super Chat',
                             color: 'gold'
