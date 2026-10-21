@@ -1,21 +1,27 @@
-// StreamChat Mobile Client
+// StreamChat Mobile - Multi-Stream Client
 const socket = io();
 
 // Elementos DOM
 const liveIndicatorDot = document.getElementById('live-indicator-dot');
 const liveIndicatorText = document.getElementById('live-indicator-text');
-const liveUptime = document.getElementById('live-uptime');
-const statViewers = document.getElementById('stat-viewers');
+const statTotalViewers = document.getElementById('stat-total-viewers');
+const statHorizViewers = document.getElementById('stat-horiz-viewers');
+const statVertViewers = document.getElementById('stat-vert-viewers');
 const statLikes = document.getElementById('stat-likes');
-const statMessages = document.getElementById('stat-messages');
-const liveTitle = document.getElementById('live-title');
-const channelNameBadge = document.getElementById('channel-name-badge');
+
+const horizTitle = document.getElementById('horiz-title');
+const vertTitle = document.getElementById('vert-title');
 const offlineBanner = document.getElementById('offline-banner');
 
 const chatContainer = document.getElementById('chat-container');
 const chatMessages = document.getElementById('chat-messages');
 const btnScrollBottom = document.getElementById('btn-scroll-bottom');
 const unreadCountSpan = document.getElementById('unread-count');
+
+const countAll = document.getElementById('count-all');
+const countHoriz = document.getElementById('count-horiz');
+const countVert = document.getElementById('count-vert');
+const filterTabs = document.querySelectorAll('.filter-tab');
 
 const btnTogglePause = document.getElementById('btn-toggle-pause');
 const pauseIcon = document.getElementById('pause-icon');
@@ -25,12 +31,14 @@ const btnFullscreen = document.getElementById('btn-fullscreen');
 const socketStatusDot = document.getElementById('socket-status-dot');
 const socketStatusText = document.getElementById('socket-status-text');
 
-// Modal de Configurações
+// Modal
 const btnSettings = document.getElementById('btn-settings');
 const modalSettings = document.getElementById('modal-settings');
 const modalOverlay = document.getElementById('modal-overlay');
 const btnCloseModal = document.getElementById('btn-close-modal');
 const inputChannel = document.getElementById('input-channel');
+const inputStreamHoriz = document.getElementById('input-stream-horiz');
+const inputStreamVert = document.getElementById('input-stream-vert');
 const btnSaveChannel = document.getElementById('btn-save-channel');
 const btnForceCheck = document.getElementById('btn-force-check');
 const btnCheckNowBanner = document.getElementById('btn-check-now-banner');
@@ -39,28 +47,22 @@ const toggleAvatars = document.getElementById('toggle-avatars');
 const toggleSound = document.getElementById('toggle-sound');
 const sizeBtns = document.querySelectorAll('.size-btn');
 
-// Estado Local
-let isLive = false;
-let liveStartTime = null;
-let uptimeTimer = null;
-let totalMessagesReceived = 0;
+// Estado
 let isPaused = false;
-let unreadCount = 0;
 let userScrolledUp = false;
+let unreadCount = 0;
+let currentFilter = 'all'; // 'all', 'horizontal', 'vertical'
+let messageCounts = { all: 0, horizontal: 0, vertical: 0 };
 
-// Preferências salvas
 const preferences = {
     fontSize: localStorage.getItem('chat_font_size') || 'medium',
     showAvatars: localStorage.getItem('chat_show_avatars') !== 'false',
     playSound: localStorage.getItem('chat_play_sound') === 'true'
 };
 
-// Aplicar preferências salvas
 function applyPreferences() {
     document.body.className = `font-${preferences.fontSize}`;
-    if (!preferences.showAvatars) {
-        document.body.classList.add('hide-avatars');
-    }
+    if (!preferences.showAvatars) document.body.classList.add('hide-avatars');
     toggleAvatars.checked = preferences.showAvatars;
     toggleSound.checked = preferences.playSound;
 
@@ -70,7 +72,6 @@ function applyPreferences() {
 }
 applyPreferences();
 
-// Sintetizador de Som para Super Chat (Web Audio API - Sem downloads externos)
 function playSuperchatChime() {
     if (!preferences.playSound) return;
     try {
@@ -78,77 +79,58 @@ function playSuperchatChime() {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
-        osc.frequency.setValueAtTime(880.00, audioCtx.currentTime + 0.1); // A5
+        osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+        osc.frequency.setValueAtTime(880.00, audioCtx.currentTime + 0.1);
         gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
         osc.connect(gain);
         gain.connect(audioCtx.destination);
         osc.start();
         osc.stop(audioCtx.currentTime + 0.5);
-    } catch (e) {
-        console.error('AudioContext error:', e);
-    }
+    } catch (e) {}
 }
 
-// Atualizar Relógio de Duração da Live
-function updateUptime() {
-    if (!liveStartTime) {
-        liveUptime.classList.add('hidden');
-        return;
-    }
-    const diff = Math.floor((Date.now() - new Date(liveStartTime).getTime()) / 1000);
-    if (diff < 0) return;
-
-    const hrs = String(Math.floor(diff / 3600)).padStart(2, '0');
-    const mins = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
-    const secs = String(diff % 60).padStart(2, '0');
-
-    liveUptime.textContent = `${hrs}:${mins}:${secs}`;
-    liveUptime.classList.remove('hidden');
-}
-
-// Atualizar Status Geral da Live na UI
-function updateLiveStatus(status) {
-    isLive = !!status.isLive;
-    channelNameBadge.textContent = status.channel || '@não definido';
+function updateStatus(status) {
+    const isLive = status.isLive;
 
     if (isLive) {
         liveIndicatorDot.className = 'dot dot-live';
         liveIndicatorText.textContent = 'AO VIVO';
         liveIndicatorText.classList.add('live');
-        liveTitle.textContent = status.title || 'Transmissão Ao Vivo';
-        statViewers.textContent = status.viewers || '0';
-        statLikes.textContent = status.likes || '0';
         offlineBanner.classList.add('hidden');
-
-        if (status.startTime && !liveStartTime) {
-            liveStartTime = status.startTime;
-            if (uptimeTimer) clearInterval(uptimeTimer);
-            uptimeTimer = setInterval(updateUptime, 1000);
-            updateUptime();
-        }
     } else {
         liveIndicatorDot.className = 'dot dot-offline';
         liveIndicatorText.textContent = 'OFFLINE';
         liveIndicatorText.classList.remove('live');
-        liveTitle.textContent = status.channel ? 'Aguardando início da live...' : 'Configure o seu canal para monitorar';
-        statViewers.textContent = '0';
-        statLikes.textContent = '0';
-        liveUptime.classList.add('hidden');
-        if (uptimeTimer) {
-            clearInterval(uptimeTimer);
-            uptimeTimer = null;
-        }
-        liveStartTime = null;
         offlineBanner.classList.remove('hidden');
+    }
+
+    // Espectadores
+    statTotalViewers.textContent = status.totalViewers || '0';
+    statLikes.textContent = status.totalLikes || '0';
+
+    if (status.streams) {
+        const h = status.streams.horizontal;
+        const v = status.streams.vertical;
+
+        statHorizViewers.textContent = h && h.isLive ? h.viewers : 'off';
+        statVertViewers.textContent = v && v.isLive ? v.viewers : 'off';
+
+        horizTitle.textContent = h && h.isLive ? h.title : (h.liveId ? 'Conectado (Aguardando stream)' : 'Offline');
+        vertTitle.textContent = v && v.isLive ? v.title : (v.liveId ? 'Conectado (Aguardando stream)' : 'Offline');
     }
 }
 
-// Renderizar Mensagem
+// Criar elemento de mensagem com distinção clara de cores
 function createMessageElement(data) {
     const card = document.createElement('div');
-    card.className = 'message-card';
+    card.className = `message-card stream-${data.streamType || 'horizontal'}`;
+    card.dataset.stream = data.streamType || 'horizontal';
+
+    if (currentFilter !== 'all' && card.dataset.stream !== currentFilter) {
+        card.style.display = 'none';
+    }
+
     if (data.superchat) card.classList.add('superchat');
 
     // Avatar
@@ -159,28 +141,31 @@ function createMessageElement(data) {
     avatar.alt = data.author.name;
     card.appendChild(avatar);
 
-    // Corpo da Mensagem
+    // Corpo
     const body = document.createElement('div');
     body.className = 'message-body';
 
-    // Superchat Banner
+    // Superchat
     if (data.superchat) {
-        const scHeader = document.createElement('div');
-        scHeader.className = 'superchat-header';
-        
         const scBadge = document.createElement('span');
         scBadge.className = 'superchat-amount';
         scBadge.textContent = data.superchat.amount;
         if (data.superchat.color) scBadge.style.backgroundColor = data.superchat.color;
-
-        scHeader.appendChild(scBadge);
-        body.appendChild(scHeader);
+        body.appendChild(scBadge);
     }
 
-    // Cabeçalho da Mensagem (Nome + Badges)
+    // Cabeçalho da mensagem
     const header = document.createElement('span');
     header.className = 'message-header';
 
+    // Tag que mostra de qual live veio
+    const originTag = document.createElement('span');
+    const isVert = data.streamType === 'vertical';
+    originTag.className = `stream-origin-tag ${isVert ? 'vert' : 'horiz'}`;
+    originTag.textContent = isVert ? '📱 VERTICAL' : '🖥️ HORIZONTAL';
+    header.appendChild(originTag);
+
+    // Autor
     const author = document.createElement('span');
     author.className = 'author-name';
     if (data.isOwner) author.classList.add('is-owner');
@@ -200,7 +185,6 @@ function createMessageElement(data) {
         b.textContent = 'Mod';
         header.appendChild(b);
     }
-
     if (data.isMembership) {
         const b = document.createElement('span');
         b.className = 'badge-tag member';
@@ -210,7 +194,7 @@ function createMessageElement(data) {
 
     body.appendChild(header);
 
-    // Conteúdo da Mensagem (Texto + Emojis)
+    // Texto + emojis
     const textSpan = document.createElement('span');
     textSpan.className = 'message-text';
 
@@ -220,7 +204,6 @@ function createMessageElement(data) {
                 const img = document.createElement('img');
                 img.src = item.url;
                 img.alt = item.alt;
-                img.title = item.alt;
                 img.className = 'chat-emoji';
                 textSpan.appendChild(img);
             } else {
@@ -230,7 +213,6 @@ function createMessageElement(data) {
     } else if (typeof data.message === 'string') {
         textSpan.textContent = data.message;
     }
-
     body.appendChild(textSpan);
 
     // Horário
@@ -246,25 +228,26 @@ function createMessageElement(data) {
     return card;
 }
 
-// Inserir Nova Mensagem
 function addMessage(data, isInitialLoad = false) {
-    totalMessagesReceived++;
-    statMessages.textContent = totalMessagesReceived;
+    messageCounts.all++;
+    const type = data.streamType || 'horizontal';
+    if (messageCounts[type] !== undefined) messageCounts[type]++;
 
-    const msgElement = createMessageElement(data);
-    chatMessages.appendChild(msgElement);
+    countAll.textContent = messageCounts.all;
+    countHoriz.textContent = messageCounts.horizontal;
+    countVert.textContent = messageCounts.vertical;
 
-    // Alerta sonoro de Super Chat se não for carga inicial
+    const el = createMessageElement(data);
+    chatMessages.appendChild(el);
+
     if (!isInitialLoad && data.superchat) {
         playSuperchatChime();
     }
 
-    // Limitar histórico no DOM para o navegador do celular não ficar lento
-    if (chatMessages.children.length > 200) {
+    if (chatMessages.children.length > 250) {
         chatMessages.removeChild(chatMessages.children[0]);
     }
 
-    // Rolagem Inteligente
     if (!isPaused && !userScrolledUp) {
         scrollToBottom();
     } else if (!isInitialLoad) {
@@ -281,7 +264,25 @@ function scrollToBottom() {
     userScrolledUp = false;
 }
 
-// Detectar se o usuário rolou para cima manualmente
+// Filtro de Tabs
+filterTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+        filterTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentFilter = tab.dataset.filter;
+
+        const allCards = chatMessages.querySelectorAll('.message-card');
+        allCards.forEach(card => {
+            if (currentFilter === 'all' || card.dataset.stream === currentFilter) {
+                card.style.display = 'flex';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+        scrollToBottom();
+    });
+});
+
 chatContainer.addEventListener('scroll', () => {
     const isAtBottom = chatContainer.scrollHeight - chatContainer.scrollTop <= chatContainer.clientHeight + 60;
     if (isAtBottom) {
@@ -295,22 +296,18 @@ chatContainer.addEventListener('scroll', () => {
 
 btnScrollBottom.addEventListener('click', scrollToBottom);
 
-// Pausar / Retomar Rolagem
 btnTogglePause.addEventListener('click', () => {
     isPaused = !isPaused;
     if (isPaused) {
         pauseIcon.textContent = '▶️';
         pauseText.textContent = 'Retomar';
-        btnTogglePause.style.borderColor = 'var(--accent-red)';
     } else {
         pauseIcon.textContent = '⏸️';
         pauseText.textContent = 'Pausar';
-        btnTogglePause.style.borderColor = 'var(--border-color)';
         scrollToBottom();
     }
 });
 
-// Botão Tela Cheia (Essencial para Mobile)
 btnFullscreen.addEventListener('click', () => {
     if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(() => {});
@@ -325,39 +322,38 @@ btnCloseModal.addEventListener('click', () => modalSettings.classList.add('hidde
 modalOverlay.addEventListener('click', () => modalSettings.classList.add('hidden'));
 
 btnSaveChannel.addEventListener('click', () => {
-    const val = inputChannel.value.trim();
-    if (val) {
-        socket.emit('set-channel', val);
-        modalSettings.classList.add('hidden');
-    }
+    const payload = {
+        channel: inputChannel.value.trim(),
+        streamHorizontal: inputStreamHoriz.value.trim(),
+        streamVertical: inputStreamVert.value.trim()
+    };
+    socket.emit('set-config', payload);
+    modalSettings.classList.add('hidden');
 });
 
 btnForceCheck.addEventListener('click', () => {
     socket.emit('force-check');
     btnForceCheck.textContent = 'Checando...';
-    setTimeout(() => {
-        btnForceCheck.textContent = '🔄 Forçar Verificação de Live';
-    }, 2000);
+    setTimeout(() => { btnForceCheck.textContent = '🔄 Forçar Verificação'; }, 2000);
 });
 
 btnCheckNowBanner.addEventListener('click', () => {
     socket.emit('force-check');
     btnCheckNowBanner.textContent = 'Verificando...';
-    setTimeout(() => {
-        btnCheckNowBanner.textContent = 'Verificar Agora';
-    }, 2000);
+    setTimeout(() => { btnCheckNowBanner.textContent = 'Verificar Agora'; }, 2000);
 });
 
 btnClearChat.addEventListener('click', () => {
     chatMessages.innerHTML = '';
-    totalMessagesReceived = 0;
-    statMessages.textContent = '0';
+    messageCounts = { all: 0, horizontal: 0, vertical: 0 };
+    countAll.textContent = '0';
+    countHoriz.textContent = '0';
+    countVert.textContent = '0';
     unreadCount = 0;
     btnScrollBottom.classList.add('hidden');
     modalSettings.classList.add('hidden');
 });
 
-// Ajuste do tamanho da fonte
 sizeBtns.forEach(btn => {
     btn.addEventListener('click', () => {
         preferences.fontSize = btn.dataset.size;
@@ -366,21 +362,19 @@ sizeBtns.forEach(btn => {
     });
 });
 
-// Toggle Avatares
 toggleAvatars.addEventListener('change', (e) => {
     preferences.showAvatars = e.target.checked;
     localStorage.setItem('chat_show_avatars', preferences.showAvatars);
     applyPreferences();
 });
 
-// Toggle Som
 toggleSound.addEventListener('change', (e) => {
     preferences.playSound = e.target.checked;
     localStorage.setItem('chat_play_sound', preferences.playSound);
     if (preferences.playSound) playSuperchatChime();
 });
 
-// Eventos do Socket.io
+// Socket.io
 socket.on('connect', () => {
     socketStatusDot.className = 'dot dot-green';
     socketStatusText.textContent = 'Conectado';
@@ -393,10 +387,13 @@ socket.on('disconnect', () => {
 
 socket.on('init', (data) => {
     inputChannel.value = data.config.channel || '';
-    updateLiveStatus(data.status);
+    inputStreamHoriz.value = data.config.streamHorizontal || '';
+    inputStreamVert.value = data.config.streamVertical || '';
+
+    updateStatus(data.status);
 
     chatMessages.innerHTML = '';
-    totalMessagesReceived = 0;
+    messageCounts = { all: 0, horizontal: 0, vertical: 0 };
 
     if (data.recentMessages && data.recentMessages.length > 0) {
         data.recentMessages.forEach(msg => addMessage(msg, true));
@@ -405,7 +402,7 @@ socket.on('init', (data) => {
 });
 
 socket.on('status-update', (status) => {
-    updateLiveStatus(status);
+    updateStatus(status);
 });
 
 socket.on('new-message', (msg) => {

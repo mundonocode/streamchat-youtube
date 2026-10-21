@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>StreamChat Mobile - Live & Estatísticas</title>
+    <title>StreamChat Mobile - Live Horizontal & Vertical</title>
     <meta name="theme-color" content="#0a0b0e">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -12,32 +12,35 @@
 </head>
 <body class="font-normal font-sans">
 
-    <!-- Top Bar: Fixa no topo com Estatísticas da Live -->
+    <!-- Top Bar: Fixa no topo com Estatísticas das Duas Lives -->
     <header id="top-bar" class="header">
         <div class="header-main">
             <div class="status-indicator-box">
                 <span id="live-indicator-dot" class="dot dot-offline"></span>
                 <span id="live-indicator-text" class="status-text">OFFLINE</span>
-                <span id="live-uptime" class="uptime-badge hidden">00:00:00</span>
             </div>
 
+            <!-- Estatísticas Unificadas e Separadas -->
             <div class="stats-group">
-                <div class="stat-card" title="Espectadores simultâneos">
+                <div class="stat-card stat-total" title="Total de espectadores (Horizontal + Vertical)">
                     <span class="stat-icon">👥</span>
-                    <span id="stat-viewers" class="stat-val">0</span>
-                    <span class="stat-label">viewers</span>
+                    <span id="stat-total-viewers" class="stat-val">0</span>
+                    <span class="stat-label">total</span>
                 </div>
 
-                <div class="stat-card" title="Marcações de gostei">
+                <div class="stat-card stat-horiz" title="Live Horizontal (Padrão)">
+                    <span class="stream-pill pill-horiz">🖥️</span>
+                    <span id="stat-horiz-viewers" class="stat-val">0</span>
+                </div>
+
+                <div class="stat-card stat-vert" title="Live Vertical (Shorts)">
+                    <span class="stream-pill pill-vert">📱</span>
+                    <span id="stat-vert-viewers" class="stat-val">0</span>
+                </div>
+
+                <div class="stat-card stat-likes" title="Total de likes">
                     <span class="stat-icon">👍</span>
                     <span id="stat-likes" class="stat-val">0</span>
-                    <span class="stat-label">likes</span>
-                </div>
-
-                <div class="stat-card" title="Total de mensagens">
-                    <span class="stat-icon">💬</span>
-                    <span id="stat-messages" class="stat-val">0</span>
-                    <span class="stat-label">msgs</span>
                 </div>
             </div>
 
@@ -47,30 +50,55 @@
         </div>
 
         <div id="live-title-container" class="live-title-bar">
-            <span id="live-title" class="live-title">Aguardando início da transmissão...</span>
-            <span id="channel-name-badge" class="channel-badge">@canal</span>
+            <div class="titles-wrapper">
+                <div id="horiz-info" class="stream-status-row">
+                    <span class="stream-badge badge-horiz">🖥️ Horizontal:</span>
+                    <span id="horiz-title" class="title-text">Aguardando...</span>
+                </div>
+                <div id="vert-info" class="stream-status-row">
+                    <span class="stream-badge badge-vert">📱 Vertical:</span>
+                    <span id="vert-title" class="title-text">Aguardando...</span>
+                </div>
+            </div>
         </div>
     </header>
 
-    <!-- Modal de Configurações / Trocar Canal -->
+    <!-- Filtro Rápido de Chat (Unificado, Só Horizontal ou Só Vertical) -->
+    <nav class="chat-filter-bar">
+        <button class="filter-tab active" data-filter="all">⚡ Feed Unificado (<span id="count-all">0</span>)</button>
+        <button class="filter-tab tab-horiz" data-filter="horizontal">🖥️ Horizontal (<span id="count-horiz">0</span>)</button>
+        <button class="filter-tab tab-vert" data-filter="vertical">📱 Vertical (<span id="count-vert">0</span>)</button>
+    </nav>
+
+    <!-- Modal de Configurações -->
     <div id="modal-settings" class="modal hidden">
         <div class="modal-overlay" id="modal-overlay"></div>
         <div class="modal-card">
             <div class="modal-header">
-                <h3>Configurações da Live</h3>
+                <h3>Configuração das Lives</h3>
                 <button id="btn-close-modal" class="close-btn">&times;</button>
             </div>
             
             <div class="modal-body">
-                <label class="form-label" for="input-channel">Canal do YouTube (@handle, URL ou ID):</label>
-                <div class="input-row">
-                    <input type="text" id="input-channel" class="form-input" placeholder="@SeuCanal" autocomplete="off" autocorrect="off">
-                    <button id="btn-save-channel" class="btn-primary">Salvar</button>
+                <label class="form-label">Canal do YouTube (@handle):</label>
+                <input type="text" id="input-channel" class="form-input" placeholder="@SeuCanal" autocomplete="off">
+                <small class="hint-text">O sistema procura automaticamente as lives Horizontal e Vertical do seu canal.</small>
+
+                <div class="manual-override-box">
+                    <span class="override-title">Ou informe os links diretamente (opcional):</span>
+                    <label class="sub-label">🖥️ Link / ID da Live Horizontal:</label>
+                    <input type="text" id="input-stream-horiz" class="form-input" placeholder="https://youtube.com/watch?v=... ou ID">
+                    
+                    <label class="sub-label">📱 Link / ID da Live Vertical (Shorts):</label>
+                    <input type="text" id="input-stream-vert" class="form-input" placeholder="https://youtube.com/watch?v=... ou ID">
                 </div>
-                <small class="hint-text">Ex: <code>@Cazetv</code>, <code>@alanzoka</code> ou o link direto da live</small>
+
+                <button id="btn-save-channel" class="btn-primary">Salvar Configurações</button>
+
+                <hr class="divider">
 
                 <div class="setting-item">
-                    <span>Tamanho da Fonte do Chat:</span>
+                    <span>Tamanho do Texto:</span>
                     <div class="btn-group">
                         <button class="size-btn" data-size="small">P</button>
                         <button class="size-btn active" data-size="medium">M</button>
@@ -89,39 +117,39 @@
                 <div class="setting-item">
                     <label class="toggle-label">
                         <input type="checkbox" id="toggle-sound">
-                        <span>Tocar alerta sonoro em Super Chat</span>
+                        <span>Alerta sonoro para Super Chat</span>
                     </label>
                 </div>
 
                 <div class="setting-action-row">
-                    <button id="btn-force-check" class="btn-secondary">🔄 Forçar Verificação de Live</button>
+                    <button id="btn-force-check" class="btn-secondary">🔄 Forçar Verificação</button>
                     <button id="btn-clear-chat" class="btn-danger">🗑️ Limpar Chat</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Banner Offline / Status -->
+    <!-- Banner Offline -->
     <div id="offline-banner" class="offline-banner">
         <div class="offline-content">
             <div class="radar-pulse"></div>
-            <h4>Procurando por live no canal...</h4>
-            <p>Assim que você iniciar a transmissão no YouTube, as estatísticas e as mensagens aparecerão aqui automaticamente!</p>
+            <h4>Procurando transmissões ativas...</h4>
+            <p>Assim que você iniciar a Live Horizontal e/ou a Live Vertical, elas serão conectadas aqui em tempo real!</p>
             <button id="btn-check-now-banner" class="btn-outline">Verificar Agora</button>
         </div>
     </div>
 
-    <!-- Feed de Mensagens do Chat -->
+    <!-- Feed Unificado do Chat -->
     <main id="chat-container" class="chat-area">
         <div id="chat-messages" class="messages-list"></div>
     </main>
 
-    <!-- Botão Flutuante: Ir para o Final (aparece quando rolar para cima) -->
+    <!-- Botão Flutuante de Scroll -->
     <button id="btn-scroll-bottom" class="scroll-bottom-btn hidden">
         <span>↓ Novas mensagens (<span id="unread-count">0</span>)</span>
     </button>
 
-    <!-- Barra Inferior de Controles Rápidos -->
+    <!-- Barra Inferior -->
     <footer class="footer-bar">
         <div class="connection-status">
             <span id="socket-status-dot" class="dot dot-green"></span>
