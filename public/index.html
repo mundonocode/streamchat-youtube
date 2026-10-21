@@ -24,7 +24,7 @@
                 <span id="pin-error-msg" class="pin-error hidden">PIN incorreto. Tente novamente.</span>
                 <button type="submit" id="btn-submit-pin" class="btn-primary btn-full">Entrar</button>
             </form>
-            <small class="pin-hint">PIN padrão inicial: <code>1234</code> (você pode alterar nas configurações)</small>
+            <small class="pin-hint">PIN padrão de acesso: <code>3006</code> (alterável nas configurações)</small>
         </div>
     </div>
 
@@ -148,26 +148,36 @@
                     </div>
                 </div>
 
-                <label class="form-label">Canal Atual do YouTube (@handle):</label>
-                <input type="text" id="input-channel" class="form-input" placeholder="@SeuCanal" autocomplete="off">
-                <small class="hint-text">O sistema varre e conecta automaticamente nas lives Horizontal e Vertical.</small>
+                <label class="form-label">Canal do YouTube (@handle ou Link de Live):</label>
+                <input type="text" id="input-channel" class="form-input" placeholder="@SeuCanal ou Link da Live" autocomplete="off">
+                <small class="hint-text">Para lives públicas, digite seu <b>@canal</b>. Para <b>lives não-listadas</b>, você também pode colar o link direto do vídeo aqui!</small>
 
                 <div class="manual-override-box">
-                    <span class="override-title">Links Manuais Específicos (opcional):</span>
-                    <label class="sub-label">🖥️ Live Horizontal (Link ou ID):</label>
-                    <input type="text" id="input-stream-horiz" class="form-input" placeholder="https://youtube.com/watch?v=...">
+                    <span class="override-title">🔗 Lives Específicas / Não-Listadas (Prioritário):</span>
+                    <label class="sub-label">🖥️ Live Horizontal (Link ou ID do vídeo):</label>
+                    <input type="text" id="input-stream-horiz" class="form-input" placeholder="https://youtube.com/watch?v=... ou ID">
                     
-                    <label class="sub-label">📱 Live Vertical / Shorts (Link ou ID):</label>
-                    <input type="text" id="input-stream-vert" class="form-input" placeholder="https://youtube.com/watch?v=...">
+                    <label class="sub-label">📱 Live Vertical / Shorts (Link ou ID do vídeo):</label>
+                    <input type="text" id="input-stream-vert" class="form-input" placeholder="https://youtube.com/watch?v=... ou ID">
+                    <small class="hint-text">Ideal para lives <b>não-listadas</b> ou quando fizer stream horizontal + vertical simultâneo.</small>
                 </div>
 
                 <!-- Alterar PIN -->
                 <div class="pin-change-box">
-                    <label class="sub-label">🔑 Trocar PIN de Segurança:</label>
-                    <input type="password" id="input-new-pin" class="form-input" placeholder="Novo PIN (ex: 4 dígitos)" inputmode="numeric">
+                    <label class="sub-label">🔑 Trocar PIN de Segurança (Padrão: 3006):</label>
+                    <input type="password" id="input-new-pin" class="form-input" placeholder="Novo PIN numérico" inputmode="numeric">
                 </div>
 
                 <button id="btn-save-channel" class="btn-primary">Salvar e Conectar</button>
+
+                <!-- Área de Testes Instantâneos -->
+                <div class="test-tools-box">
+                    <span class="sub-label">🧪 Teste Visual Imediato (sem precisar de live):</span>
+                    <div class="test-action-buttons">
+                        <button id="btn-test-normal" class="btn-secondary" type="button">💬 Mensagem Normal</button>
+                        <button id="btn-test-superchat" class="btn-superchat-test" type="button">⭐ Super Chat</button>
+                    </div>
+                </div>
 
                 <hr class="divider">
 

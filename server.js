@@ -94,7 +94,7 @@ function extractVideoId(input) {
     return match ? match[1] : null;
 }
 
-async function checkSingleStream(videoId) {
+async function checkSingleStream(videoId, isManual = false) {
     if (!videoId) return { isLive: false };
     const url = `https://www.youtube.com/watch?v=${videoId}`;
 
@@ -107,10 +107,29 @@ async function checkSingleStream(videoId) {
         });
 
         const html = await response.text();
-        const isLive = html.includes('"isLive":true') || 
-                       html.includes('"isLiveNow":true') || 
-                       html.includes('"isLiveContent":true') || 
-                       html.includes('"status":"LIVE"');
+
+        let title = '';
+        const titleMatch = html.match(/<title>([^<]*)<\/title>/);
+        if (titleMatch) title = titleMatch[1].replace(' - YouTube', '').trim();
+
+        // Checar se a live já foi terminada pelo YouTube
+        const isEnded = html.includes('Este evento ao vivo foi encerrado') || 
+                        html.includes('is finished live') ||
+                        html.includes('Streamed live');
+
+        let isLive = false;
+        if (!isEnded) {
+            if (isManual) {
+                // Se for link direto (público ou não-listado), aceita e conecta o chat!
+                isLive = true;
+            } else {
+                isLive = html.includes('"isLive":true') || 
+                         html.includes('"isLiveNow":true') || 
+                         html.includes('"status":"LIVE"') ||
+                         html.includes('BADGE_STYLE_TYPE_LIVE_NOW') ||
+                         (html.includes('"liveChatRenderer"') && !isEnded);
+            }
+        }
 
         let viewers = '0';
         const viewersMatch = html.match(/"videoViewCountRenderer":\{"viewCount":\{"runs":\[\{"text":"([^"]+)"\}/) ||
@@ -124,24 +143,34 @@ async function checkSingleStream(videoId) {
                            html.match(/"defaultText":\{"accessibility":\{"accessibilityData":\{"label":"([0-9.,]+)\s*(?:gostei|likes)"/i);
         if (likesMatch) likes = likesMatch[1];
 
-        let title = '';
-        const titleMatch = html.match(/<title>([^<]*)<\/title>/);
-        if (titleMatch) title = titleMatch[1].replace(' - YouTube', '').trim();
-
-        return { isLive, liveId: videoId, viewers, likes, title };
+        return { isLive, liveId: videoId, viewers, likes, title: title || `Live (${videoId})` };
     } catch (err) {
+        if (isManual) {
+            return { isLive: true, liveId: videoId, viewers: '0', likes: '0', title: `Live Manual (${videoId})` };
+        }
         return { isLive: false, error: err.message };
     }
 }
 
 async function discoverChannelLives(channelInput) {
+    if (!channelInput) return [];
+
+    // Se o usuário colou um link de vídeo ou ID no campo canal:
+    const directId = extractVideoId(channelInput);
+    if (directId) {
+        console.log(`[DISCOVERY] Link de vídeo direto inserido no campo de canal: ${directId}`);
+        const streamData = await checkSingleStream(directId, true);
+        return [streamData];
+    }
+
     let clean = channelInput.trim().replace(/^@/, '');
     const foundIds = new Set();
     const liveResults = [];
 
     const urlsToScan = [
         `https://www.youtube.com/@${clean}/live`,
-        `https://www.youtube.com/@${clean}/streams`
+        `https://www.youtube.com/@${clean}/streams`,
+        `https://www.youtube.com/@${clean}`
     ];
 
     for (const url of urlsToScan) {
@@ -154,20 +183,33 @@ async function discoverChannelLives(channelInput) {
                 redirect: 'follow'
             });
 
-            const finalWatchMatch = res.url.match(/watch\?v=([a-zA-Z0-9_-]{11})/);
-            if (finalWatchMatch) foundIds.add(finalWatchMatch[1]);
-
             const html = await res.text();
-            
-            const regex = /"videoId":"([a-zA-Z0-9_-]{11})"[^}]+?"style":"LIVE"/g;
+
+            // 1. Canonical watch link do YouTube (redirecionamento do /live)
+            const canonicalMatch = html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})">/);
+            if (canonicalMatch) {
+                console.log(`[DISCOVERY] Live encontrada via canonical: ${canonicalMatch[1]}`);
+                foundIds.add(canonicalMatch[1]);
+            }
+
+            // 2. Meta og:url
+            const ogMatch = html.match(/<meta property="og:url" content="https:\/\/www\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})">/);
+            if (ogMatch) {
+                console.log(`[DISCOVERY] Live encontrada via og:url: ${ogMatch[1]}`);
+                foundIds.add(ogMatch[1]);
+            }
+
+            // 3. Regex para badge de LIVE
+            const regex = /"videoId":"([a-zA-Z0-9_-]{11})"[^}]+?"style":"(?:LIVE|BADGE_STYLE_TYPE_LIVE_NOW)"/g;
             let match;
             while ((match = regex.exec(html)) !== null) {
                 foundIds.add(match[1]);
             }
 
-            const matchesAll = [...html.matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)].map(m => m[1]);
-            for (const vid of matchesAll.slice(0, 15)) {
-                if (html.includes(vid) && html.includes('"style":"LIVE"')) {
+            // 4. Links /watch?v= com indicação de live
+            const matchesAll = [...html.matchAll(/\/watch\?v=([a-zA-Z0-9_-]{11})/g)].map(m => m[1]);
+            for (const vid of matchesAll.slice(0, 20)) {
+                if (html.includes(vid) && (html.includes('"label":"AO VIVO"') || html.includes('"label":"LIVE"') || html.includes('BADGE_STYLE_TYPE_LIVE_NOW'))) {
                     foundIds.add(vid);
                 }
             }
@@ -177,7 +219,7 @@ async function discoverChannelLives(channelInput) {
     }
 
     for (const vid of foundIds) {
-        const streamData = await checkSingleStream(vid);
+        const streamData = await checkSingleStream(vid, false);
         if (streamData.isLive) liveResults.push(streamData);
     }
 
@@ -185,19 +227,25 @@ async function discoverChannelLives(channelInput) {
 }
 
 async function checkAllStreams() {
-    const customHorizId = extractVideoId(config.streamHorizontal);
-    const customVertId = extractVideoId(config.streamVertical);
+    let customHorizId = extractVideoId(config.streamHorizontal);
+    let customVertId = extractVideoId(config.streamVertical);
+
+    // Se o usuário digitou link/ID direto de vídeo no campo do canal
+    if (!customHorizId && config.channel) {
+        const directFromChannel = extractVideoId(config.channel);
+        if (directFromChannel) customHorizId = directFromChannel;
+    }
 
     if (customHorizId || customVertId) {
         if (customHorizId) {
-            const dataH = await checkSingleStream(customHorizId);
+            const dataH = await checkSingleStream(customHorizId, true);
             updateStreamState('horizontal', dataH);
         } else {
             updateStreamState('horizontal', { isLive: false });
         }
 
         if (customVertId) {
-            const dataV = await checkSingleStream(customVertId);
+            const dataV = await checkSingleStream(customVertId, true);
             updateStreamState('vertical', dataV);
         } else {
             updateStreamState('vertical', { isLive: false });
@@ -206,7 +254,7 @@ async function checkAllStreams() {
         const activeLives = await discoverChannelLives(config.channel);
         
         if (activeLives.length === 0) {
-            updateStreamState('horizontal', { isLive: false });
+            updateStreamState('horizontal', { isLive: false, error: 'Nenhuma live pública encontrada no canal' });
             updateStreamState('vertical', { isLive: false });
         } else if (activeLives.length === 1) {
             updateStreamState('horizontal', activeLives[0]);
@@ -273,6 +321,18 @@ function startChatForStream(type, liveId) {
     console.log(`[CHAT-${type.toUpperCase()}] Conectando: ${liveId}`);
     const chatInstance = new LiveChat({ liveId });
     liveChatInstances[type] = chatInstance;
+
+    chatInstance.on('start', (startedId) => {
+        console.log(`[CHAT-${type.toUpperCase()}] Conectado ao chat com sucesso! (${startedId})`);
+        streams[type].isLive = true;
+        emitStateUpdate();
+    });
+
+    chatInstance.on('end', (reason) => {
+        console.log(`[CHAT-${type.toUpperCase()}] Transmissão encerrada: ${reason || 'finalizada'}`);
+        streams[type].isLive = false;
+        emitStateUpdate();
+    });
 
     chatInstance.on('chat', (chatItem) => {
         const parsedMessage = {
@@ -356,7 +416,10 @@ function emitStateUpdate() {
 io.on('connection', (socket) => {
     // Cliente tenta autenticar
     socket.on('auth', ({ pin }) => {
-        if (pin && String(pin).trim() === String(config.pin).trim()) {
+        const inputPin = String(pin || '').trim();
+        const correctPin = String(config.pin).trim();
+        if (inputPin === correctPin) {
+            console.log(`[AUTH] Dispositivo conectado com sucesso! (${socket.handshake.address})`);
             socket.join('authenticated');
             socket.emit('auth-success', {
                 config: {
@@ -369,6 +432,7 @@ io.on('connection', (socket) => {
                 recentMessages
             });
         } else {
+            console.warn(`[AUTH] Tentativa com PIN inválido: "${inputPin}" (esperado: "${correctPin}")`);
             socket.emit('auth-failed', { message: 'PIN incorreto' });
         }
     });
@@ -400,6 +464,33 @@ io.on('connection', (socket) => {
         if (!socket.rooms.has('authenticated')) return;
         await checkAllStreams();
     });
+
+    socket.on('simulate-test-message', (data) => {
+        if (!socket.rooms.has('authenticated')) return;
+        const streamType = data && data.type === 'vertical' ? 'vertical' : 'horizontal';
+        const fakeMsg = {
+            id: `test-${Date.now()}`,
+            streamType: streamType,
+            streamLabel: streamType === 'vertical' ? 'Vertical' : 'Horizontal',
+            timestamp: new Date(),
+            author: {
+                name: (data && data.name) || (streamType === 'vertical' ? 'Shorts Viewer 📱' : 'Gamer Raiz 🎮'),
+                channelId: 'UCtest',
+                thumbnail: 'https://yt3.ggpht.com/a/default-user=s88-c-k-c0x00ffffff-no-rj'
+            },
+            message: [
+                { type: 'text', text: (data && data.text) || (data && data.isSuperchat ? 'Super Chat de Teste! Mandou bem demais na live!' : 'Mensagem de teste recebida com sucesso! O chat está conectado.') }
+            ],
+            superchat: (data && data.isSuperchat) ? { amount: 'R$ 20,00', color: 'orange' } : null,
+            isMembership: !!(data && data.isMembership),
+            isVerified: false,
+            isOwner: false,
+            isModerator: false
+        };
+        recentMessages.push(fakeMsg);
+        if (recentMessages.length > MAX_RECENT_MESSAGES) recentMessages.shift();
+        io.to('authenticated').emit('new-message', fakeMsg);
+    });
 });
 
 function startMonitoring() {
@@ -410,7 +501,21 @@ function startMonitoring() {
 
 server.listen(PORT, '0.0.0.0', () => {
     const localIP = getLocalIP();
-    console.log(`🚀 Servidor protegido por PIN rodando em http://${localIP}:${PORT}`);
-    console.log(`🔑 PIN Atual: ${config.pin}`);
+    const localUrl = `http://${localIP}:${PORT}`;
+    const localHostUrl = `http://localhost:${PORT}`;
+
+    console.log('\n========================================================');
+    console.log('🚀 PAINEL MULTI-STREAM YOUTUBE (PROTEGIDO POR PIN)');
+    console.log('========================================================');
+    console.log(`💻 Acesso no PC:      ${localHostUrl}`);
+    console.log(`📱 Acesso no Celular: ${localUrl}`);
+    console.log(`🔑 PIN de Acesso:     ${config.pin}`);
+    console.log('--------------------------------------------------------');
+    console.log('Escaneie com a câmera do celular (mesma rede Wi-Fi):');
+    console.log('--------------------------------------------------------\n');
+    qrcode.generate(localUrl, { small: true });
+    console.log('\n========================================================');
+    console.log(`Canal monitorado: ${config.channel || '(nenhum)'}`);
+    console.log('========================================================\n');
     startMonitoring();
 });

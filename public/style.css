@@ -652,5 +652,30 @@ body.hide-avatars .message-avatar { display: none !important; }
 .size-btn { background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-secondary); padding: 3px 8px; border-radius: 4px; cursor: pointer; }
 .size-btn.active { background: #2563eb; border-color: #2563eb; color: #fff; }
 .toggle-label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.test-tools-box {
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px dashed rgba(16, 185, 129, 0.4);
+    padding: 8px;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.test-action-buttons {
+    display: flex;
+    gap: 6px;
+}
+.btn-superchat-test {
+    flex: 1;
+    background: rgba(245, 158, 11, 0.2);
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    color: #fbbf24;
+    padding: 7px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 12px;
+}
+
 .setting-action-row { display: flex; gap: 6px; margin-top: 6px; }
 .hidden { display: none !important; }

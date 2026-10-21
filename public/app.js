@@ -95,19 +95,38 @@ function tryAuth(pin) {
 }
 
 function submitPin() {
-    const val = inputPin.value.trim();
+    const val = inputPin ? inputPin.value.trim() : '';
     if (!val) return;
-    pinErrorMsg.classList.add('hidden');
+    if (pinErrorMsg) pinErrorMsg.classList.add('hidden');
     tryAuth(val);
 }
 
-// Ao abrir no celular: verifica se já tem PIN salvo
-window.addEventListener('DOMContentLoaded', () => {
+const formPin = document.getElementById('form-pin');
+if (formPin) {
+    formPin.addEventListener('submit', (e) => {
+        e.preventDefault();
+        submitPin();
+    });
+}
+if (btnSubmitPin) {
+    btnSubmitPin.addEventListener('click', (e) => {
+        e.preventDefault();
+        submitPin();
+    });
+}
+
+function checkAutoAuth() {
     const savedPin = localStorage.getItem('streamer_pin') || '3006';
-    if (savedPin) {
+    if (savedPin && socket.connected) {
         tryAuth(savedPin);
     }
-});
+}
+
+if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', checkAutoAuth);
+} else {
+    checkAutoAuth();
+}
 
 socket.on('auth-success', (data) => {
     isAuthenticated = true;
@@ -457,6 +476,32 @@ btnForceCheck.addEventListener('click', () => {
     btnForceCheck.textContent = 'Checando...';
     setTimeout(() => { btnForceCheck.textContent = '🔄 Forçar Checagem'; }, 2000);
 });
+
+// Botões de Teste Visual
+const btnTestNormal = document.getElementById('btn-test-normal');
+const btnTestSuperchat = document.getElementById('btn-test-superchat');
+
+if (btnTestNormal) {
+    btnTestNormal.addEventListener('click', () => {
+        socket.emit('simulate-test-message', {
+            type: currentFilter === 'vertical' ? 'vertical' : 'horizontal',
+            text: 'Testando chat mobile! Feed unificado e scroll funcionando 🚀',
+            isSuperchat: false
+        });
+        modalSettings.classList.add('hidden');
+    });
+}
+
+if (btnTestSuperchat) {
+    btnTestSuperchat.addEventListener('click', () => {
+        socket.emit('simulate-test-message', {
+            type: currentFilter === 'vertical' ? 'vertical' : 'horizontal',
+            text: 'Super Chat de Teste! Mandou bem demais na live!',
+            isSuperchat: true
+        });
+        modalSettings.classList.add('hidden');
+    });
+}
 
 btnCheckNowBanner.addEventListener('click', () => {
     socket.emit('force-check');
