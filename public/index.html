@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>StreamChat Mobile - Live & Estatísticas</title>
+    <meta name="theme-color" content="#0a0b0e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body class="font-normal font-sans">
+
+    <!-- Top Bar: Fixa no topo com Estatísticas da Live -->
+    <header id="top-bar" class="header">
+        <div class="header-main">
+            <div class="status-indicator-box">
+                <span id="live-indicator-dot" class="dot dot-offline"></span>
+                <span id="live-indicator-text" class="status-text">OFFLINE</span>
+                <span id="live-uptime" class="uptime-badge hidden">00:00:00</span>
+            </div>
+
+            <div class="stats-group">
+                <div class="stat-card" title="Espectadores simultâneos">
+                    <span class="stat-icon">👥</span>
+                    <span id="stat-viewers" class="stat-val">0</span>
+                    <span class="stat-label">viewers</span>
+                </div>
+
+                <div class="stat-card" title="Marcações de gostei">
+                    <span class="stat-icon">👍</span>
+                    <span id="stat-likes" class="stat-val">0</span>
+                    <span class="stat-label">likes</span>
+                </div>
+
+                <div class="stat-card" title="Total de mensagens">
+                    <span class="stat-icon">💬</span>
+                    <span id="stat-messages" class="stat-val">0</span>
+                    <span class="stat-label">msgs</span>
+                </div>
+            </div>
+
+            <div class="header-actions">
+                <button id="btn-settings" class="icon-btn" title="Configurações">⚙️</button>
+            </div>
+        </div>
+
+        <div id="live-title-container" class="live-title-bar">
+            <span id="live-title" class="live-title">Aguardando início da transmissão...</span>
+            <span id="channel-name-badge" class="channel-badge">@canal</span>
+        </div>
+    </header>
+
+    <!-- Modal de Configurações / Trocar Canal -->
+    <div id="modal-settings" class="modal hidden">
+        <div class="modal-overlay" id="modal-overlay"></div>
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Configurações da Live</h3>
+                <button id="btn-close-modal" class="close-btn">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <label class="form-label" for="input-channel">Canal do YouTube (@handle, URL ou ID):</label>
+                <div class="input-row">
+                    <input type="text" id="input-channel" class="form-input" placeholder="@SeuCanal" autocomplete="off" autocorrect="off">
+                    <button id="btn-save-channel" class="btn-primary">Salvar</button>
+                </div>
+                <small class="hint-text">Ex: <code>@Cazetv</code>, <code>@alanzoka</code> ou o link direto da live</small>
+
+                <div class="setting-item">
+                    <span>Tamanho da Fonte do Chat:</span>
+                    <div class="btn-group">
+                        <button class="size-btn" data-size="small">P</button>
+                        <button class="size-btn active" data-size="medium">M</button>
+                        <button class="size-btn" data-size="large">G</button>
+                        <button class="size-btn" data-size="xlarge">GG</button>
+                    </div>
+                </div>
+
+                <div class="setting-item">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="toggle-avatars" checked>
+                        <span>Exibir fotos de perfil (avatares)</span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="toggle-sound">
+                        <span>Tocar alerta sonoro em Super Chat</span>
+                    </label>
+                </div>
+
+                <div class="setting-action-row">
+                    <button id="btn-force-check" class="btn-secondary">🔄 Forçar Verificação de Live</button>
+                    <button id="btn-clear-chat" class="btn-danger">🗑️ Limpar Chat</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Banner Offline / Status -->
+    <div id="offline-banner" class="offline-banner">
+        <div class="offline-content">
+            <div class="radar-pulse"></div>
+            <h4>Procurando por live no canal...</h4>
+            <p>Assim que você iniciar a transmissão no YouTube, as estatísticas e as mensagens aparecerão aqui automaticamente!</p>
+            <button id="btn-check-now-banner" class="btn-outline">Verificar Agora</button>
+        </div>
+    </div>
+
+    <!-- Feed de Mensagens do Chat -->
+    <main id="chat-container" class="chat-area">
+        <div id="chat-messages" class="messages-list"></div>
+    </main>
+
+    <!-- Botão Flutuante: Ir para o Final (aparece quando rolar para cima) -->
+    <button id="btn-scroll-bottom" class="scroll-bottom-btn hidden">
+        <span>↓ Novas mensagens (<span id="unread-count">0</span>)</span>
+    </button>
+
+    <!-- Barra Inferior de Controles Rápidos -->
+    <footer class="footer-bar">
+        <div class="connection-status">
+            <span id="socket-status-dot" class="dot dot-green"></span>
+            <span id="socket-status-text">Conectado</span>
+        </div>
+
+        <div class="footer-controls">
+            <button id="btn-toggle-pause" class="btn-chip" title="Pausar rolagem automática">
+                <span id="pause-icon">⏸️</span>
+                <span id="pause-text">Pausar</span>
+            </button>
+            <button id="btn-fullscreen" class="btn-chip" title="Tela Cheia">⛶ Tela Cheia</button>
+        </div>
+    </footer>
+
+    <script src="/app.js"></script>
+</body>
+</html>
